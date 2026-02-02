@@ -1,0 +1,27 @@
+.header-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #d1b3ff;
+  padding: 12px 24px;
+  position: relative;
+}
+
+.header-container img {
+  height: 48px;
+  margin-right: 12px;
+}
+
+.btn-saldo {
+  background: #6b3fb5;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.btn-saldo:hover {
+  opacity: 0.95;
+}
