@@ -4,13 +4,14 @@ import { audioHelper } from '../../utils/audioHelper';
 
 interface MainCatalogProps {
   products: Product[];
+  categories: { id: string; name: string }[];
   onAddToCart: (product: Product) => void;
   layout: 'vertical' | 'horizontal';
   onSort: (type: string) => void;
   inventory?: { [key: string]: number };
 }
 
-const MainCatalog: React.FC<MainCatalogProps> = ({ products, onAddToCart, layout, onSort, inventory = {} }) => {
+const MainCatalog: React.FC<MainCatalogProps> = ({ products, categories, onAddToCart, layout, onSort, inventory = {} }) => {
   const [searchTerm, setSearchTerm] = useState('');
 
   const filteredProducts = products.filter(p =>
@@ -50,6 +51,13 @@ const MainCatalog: React.FC<MainCatalogProps> = ({ products, onAddToCart, layout
           const isOutOfStock = stock === 0;
           const isBlocked = product.isBlocked === true;
           const isUnavailable = isOutOfStock || isBlocked;
+          // Validar si la categoría del producto existe en la lista de categorías globales
+          const productCatId = String(product.category || '').trim().toUpperCase();
+          const categoryExists = categories.some(cat => {
+            return String(cat.id).trim().toUpperCase() === productCatId || 
+                   String(cat.name).trim().toUpperCase() === productCatId;
+          });
+          const hasCategoryError = productCatId !== '' && !categoryExists;
           return (
             <div key={product.id} className="product-card" style={{ 
               minWidth: 220, 
@@ -62,7 +70,7 @@ const MainCatalog: React.FC<MainCatalogProps> = ({ products, onAddToCart, layout
               flexDirection: 'column', 
               alignItems: 'center',
               position: 'relative',
-              opacity: isUnavailable ? 0.6 : 1,
+              opacity: isUnavailable || hasCategoryError ? 0.6 : 1,
               transition: 'all 0.2s ease'
             }}>
               {(isUnavailable) && (
@@ -80,6 +88,22 @@ const MainCatalog: React.FC<MainCatalogProps> = ({ products, onAddToCart, layout
                   {isBlocked ? 'NO DISPONIBLE' : 'SIN STOCK'}
                 </div>
               )}
+              {hasCategoryError && (
+                <div style={{
+                  position: 'absolute',
+                  top: isUnavailable ? '25px' : '6px', // Ponerlo debajo si ya hay otra etiqueta
+                  right: '6px',
+                  background: '#f39c12', // Naranja para advertencia
+                  color: 'white',
+                  padding: '3px 6px',
+                  borderRadius: '4px',
+                  fontSize: '8px',
+                  fontWeight: 700,
+                  zIndex: 1
+                }}>
+                  CAT. ERROR
+                </div>
+              )}
               {product.image && <img src={product.image} alt={product.name} style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 16, marginBottom: 12 }} />}
               <div style={{ width: '100%' }}>
                 <h4 style={{ margin: '8px 0 4px 0', fontWeight: 700 }}>{product.name}</h4>
@@ -87,8 +111,8 @@ const MainCatalog: React.FC<MainCatalogProps> = ({ products, onAddToCart, layout
                 <div className={isOutOfStock ? 'stock-alert' : ''} style={{ fontSize: 13, color: stock > 0 ? 'var(--success)' : 'var(--danger)', marginBottom: 8, fontWeight: 700 }}>
                   📦 Stock: {stock}
                 </div>
-                <button className="add-btn" onClick={() => { onAddToCart(product); audioHelper.playAddToCart(); }} disabled={isUnavailable} aria-label={`Agregar ${product.name} al carrito`} style={{ opacity: isUnavailable ? 0.5 : 1, cursor: isUnavailable ? 'not-allowed' : 'pointer' }}>
-                  {isBlocked ? 'No disponible' : (isOutOfStock ? 'Sin stock' : 'Agregar al carrito')}
+                <button className="add-btn" onClick={() => { onAddToCart(product); audioHelper.playAddToCart(); }} disabled={isUnavailable || hasCategoryError} aria-label={`Agregar ${product.name} al carrito`} style={{ opacity: isUnavailable || hasCategoryError ? 0.5 : 1, cursor: isUnavailable || hasCategoryError ? 'not-allowed' : 'pointer' }}>
+                  {hasCategoryError ? 'Error de Cat.' : (isBlocked ? 'No disponible' : (isOutOfStock ? 'Sin stock' : 'Agregar al carrito'))}
                 </button>
               </div>
             </div>

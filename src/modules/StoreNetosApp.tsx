@@ -5,24 +5,13 @@ import MainCatalog from '../ui/layout/MainCatalog';
 import CartSidebar from '../ui/layout/CartSidebar';
 import Toast from '../components/Toast';
 import Footer from '../ui/layout/Footer';
-import { listenToProducts, processOrderAndDecreaseStock, Product, Client } from '../services/storeService';
+import { listenToProducts, listenToCategories, processOrderAndDecreaseStock, Product, Client, Category } from '../services/storeService';
 import LoginPage from './LoginPage';
 import AdminPanel from './AdminPanel';
 
-const categories = [
-  { id: 'ALL', name: 'Todas' },
-  { id: 'GAL01', name: 'GALLETAS' },
-  { id: 'SAB01', name: 'SABRITAS' },
-  { id: 'CAC01', name: 'CACAHUATES' },
-  { id: 'CHI01', name: 'CHICLES' },
-  { id: 'CHOC01', name: 'CHOCOLATES' },
-  { id: 'DUL01', name: 'DULCES' },
-  { id: 'CAF01', name: 'CAFÉS' },
-  { id: 'BEB01', name: 'BEBIDAS' },
-];
-
 const StoreNetosApp: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState('ALL');
+  const [categories, setCategories] = useState<Category[]>([{ id: 'ALL', name: 'Todas' }]);
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<{ productId: string; quantity: number }[]>([]);
   const [sortType, setSortType] = useState<string>('');
@@ -52,9 +41,15 @@ const StoreNetosApp: React.FC = () => {
       localStorage.setItem('storeNetosInventory', JSON.stringify(newInventory));
     });
 
-    // 4. Función de limpieza para detener el listener cuando el componente se desmonte
+    // 3. Establecer listener para categorías
+    const unsubscribeCategories = listenToCategories((cats) => {
+      setCategories([{ id: 'ALL', name: 'Todas' }, ...cats]);
+    });
+
+    // 4. Función de limpieza
     return () => {
       unsubscribe();
+      unsubscribeCategories();
     };
   }, []);
 
@@ -67,15 +62,29 @@ const StoreNetosApp: React.FC = () => {
 
   // Filtrar productos por categoría
   const filteredProducts = useMemo(() => {
-    // Nota: Asegúrate que en Firebase el campo se llame 'category' y coincida con los IDs (ej. GAL01)
-    return products.filter(p => selectedCategory === 'ALL' || p.category === selectedCategory);
-  }, [selectedCategory, products]);
+    if (selectedCategory === 'ALL') return products;
+
+    // Obtener datos de la categoría seleccionada para comparar flexiblemente (por ID o Nombre)
+    const currentCat = categories.find(c => c.id === selectedCategory);
+    const targetId = String(selectedCategory).trim().toUpperCase();
+    const targetName = currentCat ? String(currentCat.name || '').trim().toUpperCase() : '';
+
+    return products.filter(p => {
+      const pCat = String(p.category || '').trim().toUpperCase();
+      return pCat === targetId || (targetName !== '' && pCat === targetName);
+    });
+  }, [selectedCategory, products, categories]);
 
   // Calcular categorías visibles (solo las que tienen productos + 'ALL')
   const visibleCategories = useMemo(() => {
-    const activeCategoryIds = new Set(products.map(p => p.category));
-    return categories.filter(cat => cat.id === 'ALL' || activeCategoryIds.has(cat.id));
-  }, [products]);
+    const activeCategoryIds = new Set(products.map(p => String(p.category || '').trim().toUpperCase()));
+    return categories.filter(cat => {
+      if (cat.id === 'ALL') return true;
+      const cId = String(cat.id).trim().toUpperCase();
+      const cName = String(cat.name || '').trim().toUpperCase();
+      return activeCategoryIds.has(cId) || activeCategoryIds.has(cName);
+    });
+  }, [products, categories]);
 
   // Ordenar productos
   const sortedProducts = useMemo(() => {
@@ -228,6 +237,7 @@ const StoreNetosApp: React.FC = () => {
         <div className="catalog-section">
           <MainCatalog
             products={sortedProducts}
+            categories={categories}
             onAddToCart={handleAddToCart}
             layout="vertical"
             onSort={setSortType}

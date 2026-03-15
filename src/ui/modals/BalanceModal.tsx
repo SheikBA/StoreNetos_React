@@ -44,6 +44,14 @@ const BalanceModal: React.FC<BalanceModalProps> = ({ open, onClose }) => {
     onClose();
   };
 
+  const handleClear = () => {
+    setSearchId('');
+    setError('');
+    setIsSearching(false);
+    setFoundClient(null);
+    audioHelper.playClickCategory();
+  };
+
   if (!open) return null;
 
   return (
@@ -119,29 +127,47 @@ const BalanceModal: React.FC<BalanceModalProps> = ({ open, onClose }) => {
             </div>
           )}
 
-          <button
-            onClick={handleSearch}
-            disabled={isSearching}
-            style={{
-              width: '100%',
-              backgroundColor: 'var(--primary)',
-              color: 'white',
-              border: 'none',
-              padding: '12px',
-              borderRadius: '8px',
-              fontWeight: '700',
-              fontSize: '16px',
-              cursor: isSearching ? 'wait' : 'pointer',
-              marginTop: '10px',
-              boxShadow: '0 4px 12px rgba(107, 63, 181, 0.3)',
-              transition: 'all 0.2s ease',
-              opacity: isSearching ? 0.7 : 1
-            }}
-            onMouseEnter={(e) => !isSearching && (e.currentTarget.style.transform = 'translateY(-2px)')}
-            onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
-          >
-            {isSearching ? '⏳ BUSCANDO...' : '🔍 BUSCAR'}
-          </button>
+          <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+            <button
+              onClick={handleSearch}
+              disabled={isSearching}
+              style={{
+                flex: 1,
+                backgroundColor: 'var(--primary)',
+                color: 'white',
+                border: 'none',
+                padding: '12px',
+                borderRadius: '8px',
+                fontWeight: '700',
+                fontSize: '16px',
+                cursor: isSearching ? 'wait' : 'pointer',
+                boxShadow: '0 4px 12px rgba(107, 63, 181, 0.3)',
+                transition: 'all 0.2s ease',
+                opacity: isSearching ? 0.7 : 1
+              }}
+              onMouseEnter={(e) => !isSearching && (e.currentTarget.style.transform = 'translateY(-2px)')}
+              onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
+            >
+              {isSearching ? '⏳ BUSCANDO...' : '🔍 BUSCAR'}
+            </button>
+
+            {(searchId || foundClient || error) && (
+              <button
+                onClick={handleClear}
+                style={{
+                  backgroundColor: '#f0f0f0',
+                  color: '#666',
+                  border: '1px solid #ddd',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                }}
+              >
+                Limpiar
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
