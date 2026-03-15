@@ -5,8 +5,9 @@ import MainCatalog from '../ui/layout/MainCatalog';
 import CartSidebar from '../ui/layout/CartSidebar';
 import Toast from '../components/Toast';
 import Footer from '../ui/layout/Footer';
-import { products } from '../mock/products';
-import { clients } from '../mock/clients';
+import { listenToProducts, processOrderAndDecreaseStock, Product, Client } from '../services/storeService';
+import LoginPage from './LoginPage';
+import AdminPanel from './AdminPanel';
 
 const categories = [
   { id: 'ALL', name: 'Todas' },
@@ -22,35 +23,39 @@ const categories = [
 
 const StoreNetosApp: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState('ALL');
+  const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<{ productId: string; quantity: number }[]>([]);
   const [sortType, setSortType] = useState<string>('');
   const [showCartPanel, setShowCartPanel] = useState(false);
   const [inventory, setInventory] = useState<{ [key: string]: number }>({});
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [view, setView] = useState<'store' | 'login' | 'admin'>('store');
 
-  // Load cart from localStorage on mount
+  // Cargar datos iniciales y establecer listener en tiempo real para productos
   useEffect(() => {
+    // 1. Cargar carrito desde localStorage (solo una vez)
     const savedCart = localStorage.getItem('storeNetosCart');
     if (savedCart) {
-      try {
-        setCart(JSON.parse(savedCart));
-      } catch (e) {
-        console.error('Failed to load cart:', e);
-      }
+      setCart(JSON.parse(savedCart));
     }
 
-    // Initialize inventory with random values on first load
-    const savedInventory = localStorage.getItem('storeNetosInventory');
-    if (savedInventory) {
-      try {
-        setInventory(JSON.parse(savedInventory));
-      } catch (e) {
-        console.error('Failed to load inventory:', e);
-        initializeInventory();
-      }
-    } else {
-      initializeInventory();
-    }
+    // 2. Establecer listener para productos en tiempo real
+    const unsubscribe = listenToProducts((productsData) => {
+      setProducts(productsData);
+      
+      // 3. Sincronizar el inventario cada vez que los productos cambian
+      const newInventory = productsData.reduce((acc: Record<string, number>, p: Product) => ({
+        ...acc,
+        [p.id]: p.stock || 0
+      }), {} as Record<string, number>);
+      setInventory(newInventory);
+      localStorage.setItem('storeNetosInventory', JSON.stringify(newInventory));
+    });
+
+    // 4. Función de limpieza para detener el listener cuando el componente se desmonte
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   // Save cart to localStorage whenever it changes
@@ -58,40 +63,39 @@ const StoreNetosApp: React.FC = () => {
     localStorage.setItem('storeNetosCart', JSON.stringify(cart));
   }, [cart]);
 
-  // Initialize inventory with random stock values
-  const initializeInventory = () => {
-    const newInventory = products.reduce((acc, p) => ({
-      ...acc,
-      [p.id]: Math.floor(Math.random() * 80) + 20 // Random 20-100
-    }), {});
-    setInventory(newInventory);
-    localStorage.setItem('storeNetosInventory', JSON.stringify(newInventory));
-  };
+  // Nota: initializeInventory se ha movido al useEffect de carga de datos
 
   // Filtrar productos por categoría
   const filteredProducts = useMemo(() => {
-    return products.filter(p => selectedCategory === 'ALL' || p.categoryId === selectedCategory);
-  }, [selectedCategory]);
+    // Nota: Asegúrate que en Firebase el campo se llame 'category' y coincida con los IDs (ej. GAL01)
+    return products.filter(p => selectedCategory === 'ALL' || p.category === selectedCategory);
+  }, [selectedCategory, products]);
+
+  // Calcular categorías visibles (solo las que tienen productos + 'ALL')
+  const visibleCategories = useMemo(() => {
+    const activeCategoryIds = new Set(products.map(p => p.category));
+    return categories.filter(cat => cat.id === 'ALL' || activeCategoryIds.has(cat.id));
+  }, [products]);
 
   // Ordenar productos
   const sortedProducts = useMemo(() => {
     let sorted = [...filteredProducts];
     if (sortType === 'price-asc') sorted.sort((a, b) => a.price - b.price);
     if (sortType === 'price-desc') sorted.sort((a, b) => b.price - a.price);
-    if (sortType === 'alpha') sorted.sort((a, b) => a.name.localeCompare(b.name));
+    if (sortType === 'alpha') sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     return sorted;
   }, [filteredProducts, sortType]);
 
   // Carrito con detalles de producto
   const cartItems = cart.map(item => ({
-    product: products.find(p => p.id === item.productId)!,
+    product: products.find(p => p.id === item.productId) || null,
     quantity: item.quantity
-  })).filter(item => item.product);
+  })).filter(item => item.product !== null) as { product: Product; quantity: number }[];
 
   const total = cartItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
 
   // Handlers
-  const handleAddToCart = (product: typeof products[0]) => {
+  const handleAddToCart = (product: Product) => {
     setCart(prev => {
       const found = prev.find(i => i.productId === product.id);
       if (found) {
@@ -103,7 +107,7 @@ const StoreNetosApp: React.FC = () => {
     setToast({ message: `✅ ${product.name} agregado al carrito`, type: 'success' });
   };
 
-  const handleRemoveFromCart = (product: typeof products[0]) => {
+  const handleRemoveFromCart = (product: Product) => {
     setCart(prev => {
       const found = prev.find(i => i.productId === product.id);
       if (found && found.quantity > 1) {
@@ -113,13 +117,68 @@ const StoreNetosApp: React.FC = () => {
     });
   };
 
-  const handlePay = (clientId: string, paymentType: 'efectivo' | 'credito') => {
-    // Simular pago y limpiar carrito
-    const client = clients.find(c => c.id === clientId);
-    const summary = `Pago de $${total.toFixed(2)} realizado para ${client?.name || 'cliente'} (${paymentType === 'efectivo' ? 'Efectivo' : 'Crédito'})`;
-    setToast({ message: `✅ ${summary}`, type: 'success' });
-    setCart([]);
+  const handlePay = async (client: Client, paymentType: 'efectivo' | 'credito') => {
+    // Crear objeto de orden
+    const orderData = {
+      clientId: client.id,
+      clientName: client.name,
+      items: cartItems.map(i => ({ id: i.product.id, name: i.product.name, qty: i.quantity, price: i.product.price })),
+      total,
+      paymentType,
+      date: new Date().toISOString()
+    };
+
+    const itemsToUpdate = cartItems.map(i => ({
+      id: i.product.id,
+      quantity: i.quantity,
+    }));
+
+    try {
+      // La nueva función se encarga de crear la orden y descontar el stock atómicamente
+      await processOrderAndDecreaseStock(orderData, itemsToUpdate);
+
+      // Si la transacción es exitosa, actualizamos el inventario local
+      setInventory(prevInventory => {
+        const newInventory = { ...prevInventory };
+        itemsToUpdate.forEach(item => {
+          newInventory[item.id] = (newInventory[item.id] || 0) - item.quantity;
+        });
+        // Guardamos el nuevo inventario en localStorage para persistencia
+        localStorage.setItem('storeNetosInventory', JSON.stringify(newInventory));
+        return newInventory;
+      });
+
+      const summary = `Pago de $${total.toFixed(2)} registrado para ${client.name}`;
+      setToast({ message: `✅ ¡Orden completada! ${summary}`, type: 'success' });
+      setCart([]);
+    } catch (error) {
+      console.error("Error al procesar el pago:", error);
+      // Mostramos el error específico que viene desde la transacción (ej. falta de stock)
+      const errorMessage = typeof error === 'string' ? error : '❌ No se pudo procesar la orden.';
+      setToast({
+        message: errorMessage,
+        type: 'error'
+      });
+    }
   };
+
+  if (view === 'login') {
+    return (
+      <LoginPage 
+        onBack={() => setView('store')} 
+        onLoginSuccess={() => {
+          setToast({ message: '¡Bienvenido Administrador!', type: 'success' });
+          setView('admin'); // Aquí cambiarías a tu vista de AdminPanel cuando la crees
+        }} 
+      />
+    );
+  }
+
+  if (view === 'admin') {
+    return (
+      <AdminPanel onLogout={() => setView('store')} />
+    );
+  }
 
   return (
     <div>
@@ -142,11 +201,11 @@ const StoreNetosApp: React.FC = () => {
         cartItems={cartItems}
         onOpenCart={() => setShowCartPanel(true)}
         showCartButton={true}
-        clients={clients}
+        onAdminClick={() => setView('login')}
       />
       <div className="main-container">
         <SidebarCategories
-          categories={categories}
+          categories={visibleCategories}
           selected={selectedCategory}
           onSelect={setSelectedCategory}
         />
@@ -177,7 +236,6 @@ const StoreNetosApp: React.FC = () => {
               onAdd={handleAddToCart}
               onRemove={handleRemoveFromCart}
               total={total}
-              clients={clients}
               onPay={handlePay}
             />
             <div className="cart-panel-bottom">
@@ -193,6 +251,7 @@ const StoreNetosApp: React.FC = () => {
           onClose={() => setToast(null)}
         />
       )}
+
       <Footer />
     </div>
   );

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { Client } from '../../mock/clients';
-import { Product } from '../../mock/products';
+import { Client, Product } from '../../services/storeService';
 
 interface CartItem {
   product: Product;

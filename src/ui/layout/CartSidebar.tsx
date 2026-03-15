@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { Product } from '../../mock/products';
-import { Client } from '../../mock/clients';
+import { Product, Client, getClientByUniqueId } from '../../services/storeService';
 import { audioHelper } from '../../utils/audioHelper';
 
 interface CartItem {
@@ -13,48 +12,50 @@ interface CartSidebarProps {
   onAdd: (product: Product) => void;
   onRemove: (product: Product) => void;
   total: number;
-  clients?: Client[];
-  onPay?: (clientId: string, paymentType: 'efectivo' | 'credito') => void;
+  onPay?: (client: Client, paymentType: 'efectivo' | 'credito') => void;
 }
 
-const CartSidebar: React.FC<CartSidebarProps> = ({ items, onAdd, onRemove, total, clients = [], onPay }) => {
+const CartSidebar: React.FC<CartSidebarProps> = ({ items, onAdd, onRemove, total, onPay }) => {
   const [showPayment, setShowPayment] = useState(false);
-  const [clientId, setClientId] = useState('');
   const [paymentType, setPaymentType] = useState<'efectivo' | 'credito' | ''>('');
-
-  const client = clients.find(c => c.id === clientId);
-  const isFormComplete = clientId && paymentType;
 
   const handlePayNow = () => {
     setShowPayment(true);
-    setClientId('');
     setPaymentType('');
     audioHelper.playClickCategory();
   };
 
   const [searchId, setSearchId] = useState('');
   const [searchError, setSearchError] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const [foundClient, setFoundClient] = useState<Client | null>(null);
   const [showBankTransfer, setShowBankTransfer] = useState(false);
 
-  const handleAddClientById = () => {
+  const isFormComplete = foundClient && paymentType;
+
+  const handleAddClientById = async () => {
     const id = searchId.trim();
     if (!id) {
       setSearchError('Ingresa un ID válido');
       audioHelper.playError();
       return;
     }
-    const c = clients.find(x => x.id.toLowerCase() === id.toLowerCase());
+
+    setIsSearching(true);
+    setSearchError('');
+    setFoundClient(null);
+
+    const c = await getClientByUniqueId(id);
+    setIsSearching(false);
+
     if (!c) {
       setFoundClient(null);
-      setClientId('');
       setSearchError('Cliente no encontrado');
       audioHelper.playError();
       return;
     }
     // Cliente encontrado
     setFoundClient(c);
-    setClientId(c.id);
     setSearchError('');
     // Si saldo inicial es 0, preselecciona crédito (regla del negocio)
     if (c.balance === 0) {
@@ -76,13 +77,12 @@ const CartSidebar: React.FC<CartSidebarProps> = ({ items, onAdd, onRemove, total
     // Si es efectivo, no se modifica el saldo
 
     // Ejecutar pago (callback) y reproducir sonido
-    if (onPay) onPay(foundClient.id, paymentType as 'efectivo' | 'credito');
+    if (onPay) onPay(foundClient, paymentType as 'efectivo' | 'credito');
     audioHelper.playPaymentSuccess();
 
     // Limpiar estado
     setShowPayment(false);
     setFoundClient(null);
-    setClientId('');
     setSearchId('');
     setPaymentType('');
     setShowBankTransfer(false);
@@ -151,12 +151,13 @@ const CartSidebar: React.FC<CartSidebarProps> = ({ items, onAdd, onRemove, total
               />
               <button
                 onClick={handleAddClientById}
+                disabled={isSearching}
                 style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--primary)', color: '#fff', border: '2px solid var(--primary-dark)', fontWeight: 700 }}
               >
-                Agregar
+                {isSearching ? 'Buscando...' : 'Agregar'}
               </button>
             </div>
-            {searchError && <div style={{ marginTop: 8, color: '#ffe6e6', background: 'rgba(255,23,68,0.1)', padding: 8, borderRadius: 6 }}>{searchError}</div>}
+            {searchError && !isSearching && <div style={{ marginTop: 8, color: '#ffe6e6', background: 'rgba(255,23,68,0.1)', padding: 8, borderRadius: 6 }}>{searchError}</div>}
           </div>
 
           {foundClient && (
@@ -223,18 +224,18 @@ const CartSidebar: React.FC<CartSidebarProps> = ({ items, onAdd, onRemove, total
 
           <button
             onClick={handleConfirmPayment}
-            disabled={!(foundClient && paymentType)}
+            disabled={!isFormComplete}
             style={{
               width: '100%',
               padding: '14px',
-              background: (foundClient && paymentType) ? 'var(--success)' : 'rgba(255,255,255,0.08)',
+              background: isFormComplete ? 'var(--success)' : 'rgba(255,255,255,0.08)',
               color: '#fff',
-              border: '2px solid ' + ((foundClient && paymentType) ? 'var(--success-dark)' : 'rgba(255,255,255,0.08)'),
+              border: '2px solid ' + (isFormComplete ? 'var(--success-dark)' : 'rgba(255,255,255,0.08)'),
               borderRadius: '8px',
               fontWeight: 700,
               fontSize: '16px',
-              cursor: (foundClient && paymentType) ? 'pointer' : 'not-allowed',
-              opacity: (foundClient && paymentType) ? 1 : 0.6,
+              cursor: isFormComplete ? 'pointer' : 'not-allowed',
+              opacity: isFormComplete ? 1 : 0.6,
               transition: 'all 0.3s ease',
               marginTop: 'auto'
             }}
@@ -261,7 +262,7 @@ const CartSidebar: React.FC<CartSidebarProps> = ({ items, onAdd, onRemove, total
           <div>
             {items.map(({ product, quantity }) => (
               <div key={product.id} className="cart-item-row">
-                {product.imageUrl && <img src={product.imageUrl} alt={product.name} className="cart-item-image" />}
+                {product.image && <img src={product.image} alt={product.name} className="cart-item-image" />}
                 <div>
                   <h4 style={{ margin: '0 0 4px 0', color: 'var(--text-main)' }}>{product.name}</h4>
                   <div style={{ fontSize: '13px', color: 'var(--text-light)' }}>Precio unit: ${product.price.toFixed(2)}</div>

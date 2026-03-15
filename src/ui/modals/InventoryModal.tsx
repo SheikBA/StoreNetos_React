@@ -1,5 +1,5 @@
 import React from 'react';
-import { Product } from '../../mock/products';
+import { Product } from '../../services/storeService';
 
 interface InventoryModalProps {
   open: boolean;

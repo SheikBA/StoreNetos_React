@@ -1,27 +1,32 @@
 import React, { useState } from 'react';
-import { Client } from '../../mock/clients';
+import { Client, getClientByUniqueId } from '../../services/storeService';
 import { audioHelper } from '../../utils/audioHelper';
 
 interface BalanceModalProps {
   open: boolean;
   onClose: () => void;
-  clients: Client[];
 }
 
-const BalanceModal: React.FC<BalanceModalProps> = ({ open, onClose, clients }) => {
+const BalanceModal: React.FC<BalanceModalProps> = ({ open, onClose }) => {
   const [searchId, setSearchId] = useState('');
   const [error, setError] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const [foundClient, setFoundClient] = useState<Client | null>(null);
 
-  const handleSearch = () => {
+  const handleSearch = async () => {
     if (!searchId.trim()) {
       setError('Por favor ingresa un ID único');
       setFoundClient(null);
       return;
     }
     audioHelper.playClickCategory();
+    setIsSearching(true);
+    setError('');
+    setFoundClient(null);
 
-    const client = clients.find(c => c.id.toLowerCase() === searchId.toLowerCase());
+    const client = await getClientByUniqueId(searchId);
+    setIsSearching(false);
+
     if (client) {
       setFoundClient(client);
       setError('');
@@ -34,6 +39,7 @@ const BalanceModal: React.FC<BalanceModalProps> = ({ open, onClose, clients }) =
   const handleClose = () => {
     setSearchId('');
     setError('');
+    setIsSearching(false);
     setFoundClient(null);
     onClose();
   };
@@ -116,10 +122,11 @@ const BalanceModal: React.FC<BalanceModalProps> = ({ open, onClose, clients }) =
           <button
             id="checkout-button"
             onClick={handleSearch}
+            disabled={isSearching}
             style={{ width: '100%' }}
           >
             <span></span><span></span><span></span><span></span>
-            BUSCAR
+            {isSearching ? 'BUSCANDO...' : 'BUSCAR'}
           </button>
         </div>
       </div>

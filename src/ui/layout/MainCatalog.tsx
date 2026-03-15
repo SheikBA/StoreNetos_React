@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Product } from '../../mock/products';
+import { Product } from '../../services/storeService';
 import { audioHelper } from '../../utils/audioHelper';
 
 interface MainCatalogProps {
@@ -14,7 +14,7 @@ const MainCatalog: React.FC<MainCatalogProps> = ({ products, onAddToCart, layout
   const [searchTerm, setSearchTerm] = useState('');
 
   const filteredProducts = products.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase())
+    p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -78,7 +78,7 @@ const MainCatalog: React.FC<MainCatalogProps> = ({ products, onAddToCart, layout
                   SIN STOCK
                 </div>
               )}
-              {product.imageUrl && <img src={product.imageUrl} alt={product.name} style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 16, marginBottom: 12 }} />}
+              {product.image && <img src={product.image} alt={product.name} style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 16, marginBottom: 12 }} />}
               <div style={{ width: '100%' }}>
                 <h4 style={{ margin: '8px 0 4px 0', fontWeight: 700 }}>{product.name}</h4>
                 <div style={{ fontWeight: 600, color: 'var(--primary)' }}>${product.price.toFixed(2)}</div>
