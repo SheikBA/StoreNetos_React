@@ -64,15 +64,15 @@ const LoginPage: React.FC<LoginPageProps> = ({ onBack, onLoginSuccess }) => {
       {/* Lado Izquierdo - Imagen Servicios */}
       <div style={{ 
         flex: 1, 
-        backgroundImage: 'url(https://images.unsplash.com/photo-1556742049-0cfed4f7a07d?auto=format&fit=crop&w=1350&q=80)', 
+        backgroundImage: 'url(https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1350&q=80)', 
         backgroundSize: 'cover', 
         backgroundPosition: 'center',
         position: 'relative'
       }}>
-        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(107, 63, 181, 0.4)' }}></div>
-        <div style={{ position: 'absolute', bottom: 40, left: 40, color: 'white' }}>
-          <h1 style={{ fontSize: '3rem', margin: 0, textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>Store Netos</h1>
-          <p style={{ fontSize: '1.5rem', opacity: 0.9 }}>Panel Administrativo</p>
+        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(107, 63, 181, 0.6)' }}></div>
+        <div style={{ position: 'absolute', bottom: 40, left: 40, color: 'white', maxWidth: '80%' }}>
+          <p style={{ fontSize: '1.2rem', opacity: 0.95, margin: '0 0 10px 0', fontStyle: 'italic', fontWeight: 300 }}>"Porque tus méritos son resultados de tus esfuerzos"</p>
+          <h1 style={{ fontSize: '2.5rem', margin: 0, textShadow: '0 2px 4px rgba(0,0,0,0.5)', textTransform: 'uppercase', lineHeight: '1.2' }}>STORE NETOS : PANEL ADMINISTRATIVO</h1>
         </div>
       </div>
 
