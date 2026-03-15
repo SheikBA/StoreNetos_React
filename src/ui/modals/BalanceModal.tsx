@@ -120,13 +120,27 @@ const BalanceModal: React.FC<BalanceModalProps> = ({ open, onClose }) => {
           )}
 
           <button
-            id="checkout-button"
             onClick={handleSearch}
             disabled={isSearching}
-            style={{ width: '100%' }}
+            style={{
+              width: '100%',
+              backgroundColor: 'var(--primary)',
+              color: 'white',
+              border: 'none',
+              padding: '12px',
+              borderRadius: '8px',
+              fontWeight: '700',
+              fontSize: '16px',
+              cursor: isSearching ? 'wait' : 'pointer',
+              marginTop: '10px',
+              boxShadow: '0 4px 12px rgba(107, 63, 181, 0.3)',
+              transition: 'all 0.2s ease',
+              opacity: isSearching ? 0.7 : 1
+            }}
+            onMouseEnter={(e) => !isSearching && (e.currentTarget.style.transform = 'translateY(-2px)')}
+            onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
           >
-            <span></span><span></span><span></span><span></span>
-            {isSearching ? 'BUSCANDO...' : 'BUSCAR'}
+            {isSearching ? '⏳ BUSCANDO...' : '🔍 BUSCAR'}
           </button>
         </div>
       </div>

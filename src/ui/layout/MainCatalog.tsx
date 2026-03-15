@@ -48,6 +48,8 @@ const MainCatalog: React.FC<MainCatalogProps> = ({ products, onAddToCart, layout
         {filteredProducts.length > 0 ? filteredProducts.map(product => {
           const stock = inventory[product.id] ?? 0;
           const isOutOfStock = stock === 0;
+          const isBlocked = product.isBlocked === true;
+          const isUnavailable = isOutOfStock || isBlocked;
           return (
             <div key={product.id} className="product-card" style={{ 
               minWidth: 220, 
@@ -60,22 +62,22 @@ const MainCatalog: React.FC<MainCatalogProps> = ({ products, onAddToCart, layout
               flexDirection: 'column', 
               alignItems: 'center',
               position: 'relative',
-              opacity: isOutOfStock ? 0.6 : 1,
+              opacity: isUnavailable ? 0.6 : 1,
               transition: 'all 0.2s ease'
             }}>
-              {isOutOfStock && (
+              {(isUnavailable) && (
                 <div style={{
                   position: 'absolute',
-                  top: '8px',
-                  right: '8px',
-                  background: 'var(--danger)',
+                  top: '6px',
+                  right: '6px',
+                  background: isBlocked ? '#666' : 'var(--danger)',
                   color: 'white',
-                  padding: '4px 8px',
+                  padding: '3px 6px',
                   borderRadius: '4px',
-                  fontSize: '11px',
+                  fontSize: '8px',
                   fontWeight: 700
                 }}>
-                  SIN STOCK
+                  {isBlocked ? 'NO DISPONIBLE' : 'SIN STOCK'}
                 </div>
               )}
               {product.image && <img src={product.image} alt={product.name} style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 16, marginBottom: 12 }} />}
@@ -85,8 +87,8 @@ const MainCatalog: React.FC<MainCatalogProps> = ({ products, onAddToCart, layout
                 <div className={isOutOfStock ? 'stock-alert' : ''} style={{ fontSize: 13, color: stock > 0 ? 'var(--success)' : 'var(--danger)', marginBottom: 8, fontWeight: 700 }}>
                   📦 Stock: {stock}
                 </div>
-                <button className="add-btn" onClick={() => { onAddToCart(product); audioHelper.playAddToCart(); }} disabled={isOutOfStock} aria-label={`Agregar ${product.name} al carrito`} style={{ opacity: isOutOfStock ? 0.5 : 1, cursor: isOutOfStock ? 'not-allowed' : 'pointer' }}>
-                  {isOutOfStock ? 'Sin stock' : 'Agregar al carrito'}
+                <button className="add-btn" onClick={() => { onAddToCart(product); audioHelper.playAddToCart(); }} disabled={isUnavailable} aria-label={`Agregar ${product.name} al carrito`} style={{ opacity: isUnavailable ? 0.5 : 1, cursor: isUnavailable ? 'not-allowed' : 'pointer' }}>
+                  {isBlocked ? 'No disponible' : (isOutOfStock ? 'Sin stock' : 'Agregar al carrito')}
                 </button>
               </div>
             </div>

@@ -13,13 +13,26 @@ interface CartSidebarProps {
   onRemove: (product: Product) => void;
   total: number;
   onPay?: (client: Client, paymentType: 'efectivo' | 'credito') => void;
+  onNotify?: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
-const CartSidebar: React.FC<CartSidebarProps> = ({ items, onAdd, onRemove, total, onPay }) => {
+const CartSidebar: React.FC<CartSidebarProps> = ({ items, onAdd, onRemove, total, onPay, onNotify }) => {
   const [showPayment, setShowPayment] = useState(false);
   const [paymentType, setPaymentType] = useState<'efectivo' | 'credito' | ''>('');
 
   const handlePayNow = () => {
+    // Validar si hay productos bloqueados antes de proceder
+    const blockedItems = items.filter(item => item.product.isBlocked);
+    
+    if (blockedItems.length > 0) {
+      const itemNames = blockedItems.map(i => i.product.name).join(', ');
+      if (onNotify) {
+        onNotify(`⛔ Retira del carrito: ${itemNames} (No disponible)`, 'error');
+      }
+      audioHelper.playError();
+      return;
+    }
+
     setShowPayment(true);
     setPaymentType('');
     audioHelper.playClickCategory();

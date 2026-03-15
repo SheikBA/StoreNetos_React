@@ -15,6 +15,11 @@ export interface Product {
   isBlocked?: boolean; // Nuevo campo para bloqueo
 }
 
+export interface Category {
+  id: string;
+  name: string;
+}
+
 export interface Order {
   id: string;
   clientId: string;
@@ -63,6 +68,29 @@ export const listenToProducts = (callback: (products: Product[]) => void) => {
     console.error("Error listening to products collection: ", error);
   });
   return unsubscribe; // Devuelve la función para cancelar la suscripción
+};
+
+// 1.1 Obtener todas las categorías
+export const getCategories = async (): Promise<Category[]> => {
+  const querySnapshot = await getDocs(collection(db, "categories"));
+  return querySnapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data()
+  } as Category));
+};
+
+// Escuchar categorías en tiempo real (Punto 4 aplicado a Categorías)
+export const listenToCategories = (callback: (categories: Category[]) => void) => {
+  const q = query(collection(db, "categories"));
+  return onSnapshot(q, (querySnapshot) => {
+    const categories: Category[] = [];
+    querySnapshot.forEach((doc) => {
+      categories.push({ id: doc.id, ...doc.data() } as Category);
+    });
+    callback(categories);
+  }, (error) => {
+    console.error("Error listening to categories: ", error);
+  });
 };
 
 // Obtener todas las órdenes para el dashboard
@@ -174,6 +202,19 @@ export const updateProduct = async (product: Product) => {
     await updateDoc(productRef, data);
   } catch (e) {
     console.error("Error updating product: ", e);
+    throw e;
+  }
+};
+
+// Alternar estado de bloqueo de producto (Función dedicada)
+export const toggleProductBlock = async (id: string, currentStatus: boolean) => {
+  try {
+    const productRef = doc(db, "products", id);
+    // Si currentStatus es undefined, asumimos false, así que lo invertimos a true
+    const newStatus = !currentStatus;
+    await updateDoc(productRef, { isBlocked: newStatus });
+  } catch (e) {
+    console.error("Error toggling product block status: ", e);
     throw e;
   }
 };

@@ -96,6 +96,11 @@ const StoreNetosApp: React.FC = () => {
 
   // Handlers
   const handleAddToCart = (product: Product) => {
+    if (product.isBlocked) {
+      setToast({ message: '⛔ Este producto no está disponible para la venta actualmente, Necesitas quitarlo de tú carrito.', type: 'error' });
+      return;
+    }
+
     setCart(prev => {
       const found = prev.find(i => i.productId === product.id);
       if (found) {
@@ -118,6 +123,17 @@ const StoreNetosApp: React.FC = () => {
   };
 
   const handlePay = async (client: Client, paymentType: 'efectivo' | 'credito') => {
+    // Validación de seguridad: Verificar si hay productos bloqueados en el carrito antes de pagar
+    const blockedItems = cartItems.filter(item => item.product.isBlocked);
+    
+    if (blockedItems.length > 0) {
+      const itemNames = blockedItems.map(i => i.product.name).join(', ');
+      setToast({ message: `⛔ No se puede procesar: ${itemNames} ya no está disponible. Elimínalo del carrito.`, type: 'error' });
+      // Opcional: Podrías abrir el carrito automáticamente para que lo vean
+      setShowCartPanel(true);
+      return;
+    }
+
     // Crear objeto de orden
     const orderData = {
       clientId: client.id,
@@ -237,6 +253,7 @@ const StoreNetosApp: React.FC = () => {
               onRemove={handleRemoveFromCart}
               total={total}
               onPay={handlePay}
+              onNotify={(message, type) => setToast({ message, type })}
             />
             <div className="cart-panel-bottom">
               <button className="add-more" onClick={() => setShowCartPanel(false)}>Agregar más productos</button>
