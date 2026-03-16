@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as XLSX from 'xlsx'; // Asegúrate de instalar: npm install xlsx
-import { getProducts, Product, updateAdminPassword, addProduct, updateProduct, deleteProduct, getOrders, Order, getClients, Client, updateClient, deleteClient, addClient, registerClientPayment, getCategories, Category } from '../services/storeService';
+import { getProducts, Product, updateAdminPassword, addProduct, updateProduct, deleteProduct, getOrders, Order, getClients, Client, updateClient, deleteClient, addClient, registerClientPayment, getCategories, Category, addCategory, updateCategory, deleteCategory } from '../services/storeService';
 
 interface AdminPanelProps {
   onLogout: () => void;
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
-  const [activeView, setActiveView] = useState<'dashboard' | 'products' | 'wallet' | 'security'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'products' | 'categories' | 'wallet' | 'security'>('dashboard');
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -36,6 +36,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const [clientFormData, setClientFormData] = useState<Omit<Client, 'id'>>({
     name: '', uniqueId: '', balance: 0, department: '', totalPurchase: 0, payment: 0, lastUpdate: '', email: '', isBlocked: false
   });
+
+  // Estado para formulario de categorías
+  const [isCategoryFormOpen, setIsCategoryFormOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [categoryFormData, setCategoryFormData] = useState<Omit<Category, 'id'>>({ name: '', internalId: '' });
 
   // Estado para Carga Masiva
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
@@ -142,7 +147,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
       const ws = wb.Sheets[wsname];
       const data = XLSX.utils.sheet_to_json<any>(ws);
 
-      const report = [];
+      const report: { row: number; name: string; status: 'success' | 'error'; message: string }[] = [];
       
       // Mapas para validación rápida
       const existingProductNames = new Set(products.map(p => (p.name || '').toLowerCase().trim()));
@@ -422,11 +427,52 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     }
   };
 
+  // --- Handlers de Categorías ---
+  const handleAddNewCategory = () => {
+    setEditingCategory(null);
+    setCategoryFormData({ name: '', internalId: '' });
+    setIsCategoryFormOpen(true);
+  };
+
+  const handleEditCategory = (cat: Category) => {
+    setEditingCategory(cat);
+    setCategoryFormData({ name: cat.name, internalId: cat.internalId || '' });
+    setIsCategoryFormOpen(true);
+  };
+
+  const handleDeleteCategory = async (id: string) => {
+    if (window.confirm('¿Estás seguro de eliminar esta categoría?')) {
+      await deleteCategory(id);
+      loadData();
+    }
+  };
+
+  const handleSubmitCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (editingCategory) {
+        await updateCategory({ ...categoryFormData, id: editingCategory.id });
+      } else {
+        await addCategory(categoryFormData);
+      }
+      setIsCategoryFormOpen(false);
+      loadData();
+    } catch (error) {
+      console.error("Error guardando categoría:", error);
+      alert("Error al guardar la categoría");
+    }
+  };
+
   // --- Filtrado de productos ---
   const filteredProducts = products.filter(product =>
     (product.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     String(product.internalId || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (product.category || '').toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // --- Filtrado de categorías ---
+  const filteredCategories = categories.filter(cat => 
+    (cat.name || '').toLowerCase().includes(searchTerm.toLowerCase()) && cat.id !== 'ALL'
   );
 
   // --- Dashboard Calculations ---
@@ -507,6 +553,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
             <li style={{ marginBottom: '10px' }}>
               <button onClick={() => setActiveView('products')} style={{ width: '100%', textAlign: 'left', padding: '10px', background: activeView === 'products' ? 'rgba(255,255,255,0.1)' : 'transparent', border: 'none', color: 'white', cursor: 'pointer', borderRadius: '4px' }}>
                 📦 Productos
+              </button>
+            </li>
+            <li style={{ marginBottom: '10px' }}>
+              <button onClick={() => setActiveView('categories')} style={{ width: '100%', textAlign: 'left', padding: '10px', background: activeView === 'categories' ? 'rgba(255,255,255,0.1)' : 'transparent', border: 'none', color: 'white', cursor: 'pointer', borderRadius: '4px' }}>
+                🏷️ Categorías
               </button>
             </li>
             <li style={{ marginBottom: '10px' }}>
@@ -904,6 +955,47 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
           </>
         )}
 
+        {activeView === 'categories' && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', gap: '20px' }}>
+              <h1 style={{ margin: 0, color: '#333', flexShrink: 0 }}>Gestión de Categorías</h1>
+              <input type="text" placeholder="Buscar categoría..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '10px', width: '100%', maxWidth: '400px', border: '1px solid #ddd', borderRadius: '6px' }} />
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={handleAddNewCategory} style={{ padding: '10px 20px', background: '#6b3fb5', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>+ Nueva</button>
+              </div>
+            </div>
+            {loading ? (
+              <p>Cargando categorías...</p>
+            ) : (
+              <div style={{ overflowX: 'auto', background: 'white', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #eee' }}>
+                    <tr>
+                      <th style={{ padding: '15px', color: '#666', fontSize: '12px' }}>ID</th>
+                      <th style={{ padding: '15px', color: '#666' }}>ID Interno</th>
+                      <th style={{ padding: '15px', color: '#666' }}>Nombre de Categoría</th>
+                      <th style={{ padding: '15px', color: '#666' }}>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredCategories.map((cat) => (
+                      <tr key={cat.id} style={{ borderBottom: '1px solid #eee' }}>
+                        <td style={{ padding: '10px 15px', fontSize: '10px', color: '#888', fontFamily: 'monospace' }}>{cat.id}</td>
+                        <td style={{ padding: '10px 15px', fontWeight: 'bold', fontFamily: 'monospace' }}>{cat.internalId || <span style={{color: '#ccc'}}>-</span>}</td>
+                        <td style={{ padding: '10px 15px', fontWeight: '600' }}>{cat.name}</td>
+                        <td style={{ padding: '10px 15px' }}>
+                          <button onClick={() => handleEditCategory(cat)} title="Editar" style={{ marginRight: '8px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '16px' }}>✏️</button>
+                          <button onClick={() => handleDeleteCategory(cat.id)} title="Eliminar" style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '16px' }}>🗑️</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+
         {/* Modal de Formulario */}
         {isFormOpen && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
@@ -948,6 +1040,35 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                   <button type="button" onClick={() => setIsFormOpen(false)} style={{ padding: '10px 20px', background: '#ccc', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Cancelar</button>
+                  <button type="submit" style={{ padding: '10px 20px', background: '#6b3fb5', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Guardar</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de Formulario de Categorías */}
+        {isCategoryFormOpen && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+            <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '8px', width: '400px', maxHeight: '90vh', overflowY: 'auto' }}>
+              <h2 style={{ marginTop: 0 }}>{editingCategory ? 'Editar Categoría' : 'Nueva Categoría'}</h2>
+              <form onSubmit={handleSubmitCategory}>
+                {editingCategory && (
+                  <div style={{ marginBottom: '15px' }}>
+                    <label style={{ display: 'block', marginBottom: '5px', color: '#888', fontSize: '12px' }}>ID Firebase (No editable)</label>
+                    <input type="text" readOnly value={editingCategory.id} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', background: '#f0f0f0', color: '#777', cursor: 'not-allowed' }} />
+                  </div>
+                )}
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'block', marginBottom: '5px' }}>ID Interno (Opcional)</label>
+                  <input type="text" value={categoryFormData.internalId || ''} onChange={e => setCategoryFormData({...categoryFormData, internalId: e.target.value })} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }} placeholder="Ej: CAT-01" />
+                </div>
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'block', marginBottom: '5px' }}>Nombre</label>
+                  <input required type="text" value={categoryFormData.name} onChange={e => setCategoryFormData({ ...categoryFormData, name: e.target.value })} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }} placeholder="Ej: Bebidas, Galletas..." />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button type="button" onClick={() => setIsCategoryFormOpen(false)} style={{ padding: '10px 20px', background: '#ccc', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Cancelar</button>
                   <button type="submit" style={{ padding: '10px 20px', background: '#6b3fb5', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Guardar</button>
                 </div>
               </form>

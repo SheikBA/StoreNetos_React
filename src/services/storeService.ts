@@ -1,4 +1,4 @@
-import { collection, getDocs, writeBatch, doc, runTransaction, getDoc, query, where, updateDoc, addDoc, deleteDoc, onSnapshot } from "firebase/firestore";
+import { collection, getDocs, writeBatch, doc, runTransaction, getDoc, updateDoc, addDoc, deleteDoc, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "../firebase/config";
 import bcrypt from 'bcryptjs';
 
@@ -19,6 +19,7 @@ export interface Product {
 export interface Category {
   id: string;
   name: string;
+  internalId?: string;
 }
 
 export interface Order {
@@ -229,6 +230,48 @@ export const deleteProduct = async (id: string) => {
     throw e;
   }
 };
+
+// --- CRUD de Categorías ---
+
+// Agregar categoría
+export const addCategory = async (category: Omit<Category, 'id'>) => {
+  try {
+    const docRef = await addDoc(collection(db, "categories"), category);
+    return docRef.id;
+  } catch (e) {
+    console.error("Error adding category: ", e);
+    throw e;
+  }
+};
+
+// Actualizar categoría
+export const updateCategory = async (category: Category) => {
+  try {
+    const categoryRef = doc(db, "categories", category.id);
+    const { id, ...data } = category;
+    await updateDoc(categoryRef, data);
+  } catch (e) {
+    console.error("Error updating category: ", e);
+    throw e;
+  }
+};
+
+// Eliminar categoría
+export const deleteCategory = async (id: string) => {
+  try {
+    await deleteDoc(doc(db, "categories", id));
+  } catch (e) {
+    console.error("Error deleting category: ", e);
+    throw e;
+  }
+};
+
+
+
+
+
+
+
 
 // --- CRUD de Clientes ---
 
