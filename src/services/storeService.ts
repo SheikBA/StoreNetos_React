@@ -1,6 +1,7 @@
 import { collection, getDocs, writeBatch, doc, runTransaction, getDoc, updateDoc, addDoc, deleteDoc, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "../firebase/config";
 import bcrypt from 'bcryptjs';
+import { sendOrderEmail } from "./emailService";
 
 // Definimos la estructura de nuestros datos
 export interface Product {
@@ -30,6 +31,7 @@ export interface Order {
   total: number;
   paymentType: 'efectivo' | 'credito';
   date: string; // ISO Date string
+  status?: 'Exitoso' | 'Fallido';
 }
 
 export interface Client {
@@ -136,11 +138,26 @@ export const getClientByUniqueId = async (uniqueId: string): Promise<Client | nu
 // 3. Procesar Orden y Descontar Stock (Transacción Atómica)
 export const processOrderAndDecreaseStock = async (orderData: any, items: { id: string, quantity: number }[]) => {
   try {
-    await runTransaction(db, async (transaction) => {
-      // Primero, validamos y descontamos el stock de cada producto
-      for (const item of items) {
-        const productRef = doc(db, "products", item.id);
-        const productDoc = await transaction.get(productRef);
+    // La transacción ahora devolverá los datos para el correo, o null si no son necesarios.
+    const emailNotificationData = await runTransaction(db, async (transaction) => {
+      // --- 1. FASE DE LECTURA ---
+      // Obtenemos todos los documentos de productos y el del cliente en paralelo.
+      const productRefs = items.map(item => doc(db, "products", item.id));
+      const productDocs = await Promise.all(productRefs.map(ref => transaction.get(ref)));
+      
+      let clientDoc = null;
+      let clientRef = null;
+      if (orderData.clientId) {
+        clientRef = doc(db, "clients", orderData.clientId);
+        clientDoc = await transaction.get(clientRef);
+      }
+
+      // --- 2. FASE DE VALIDACIÓN Y PREPARACIÓN ---
+      // Ahora que todas las lecturas están hechas, procesamos los datos.
+      const updates: { ref: any, data: any }[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const productDoc = productDocs[i];
 
         if (!productDoc.exists()) {
           throw `El producto con ID ${item.id} no existe y no se puede completar la orden.`;
@@ -152,31 +169,67 @@ export const processOrderAndDecreaseStock = async (orderData: any, items: { id: 
         if (newStock < 0) {
           throw `No hay suficiente stock para "${productDoc.data().name}". Disponible: ${currentStock}, Solicitado: ${item.quantity}.`;
         }
-
-        transaction.update(productRef, { stock: newStock });
+        // Preparamos la actualización del stock pero aún no la ejecutamos.
+        updates.push({ ref: productRefs[i], data: { stock: newStock } });
       }
 
-      // 2. Si la compra es a crédito, actualizamos el saldo del cliente
-      if (orderData.paymentType === 'credito' && orderData.clientId) {
-        const clientRef = doc(db, "clients", orderData.clientId);
-        const clientDoc = await transaction.get(clientRef);
+      let previousBalance = 0;
+      let newBalance = 0;
+      let clientData: Client | null = null;
 
-        if (clientDoc.exists()) {
-          const currentBalance = clientDoc.data().balance || 0;
-          const currentTotalPurchase = clientDoc.data().totalPurchase || 0;
+      if (clientDoc && clientDoc.exists()) {
+        clientData = { id: clientDoc.id, ...clientDoc.data() } as Client;
+        previousBalance = clientData.balance || 0;
+        newBalance = previousBalance; // Por defecto, el saldo no cambia (para ventas de contado)
+
+        if (orderData.paymentType === 'credito' && clientRef) {
+          const currentTotalPurchase = clientData.totalPurchase || 0;
+          newBalance = Number((previousBalance + orderData.total).toFixed(2));
           
-          transaction.update(clientRef, {
-            balance: Number((currentBalance + orderData.total).toFixed(2)),
-            totalPurchase: Number((currentTotalPurchase + orderData.total).toFixed(2)),
-            lastUpdate: new Date().toLocaleDateString('en-GB').replace(/\//g, '.')
+          // Preparamos la actualización del cliente.
+          updates.push({
+            ref: clientRef,
+            data: {
+              balance: newBalance,
+              totalPurchase: Number((currentTotalPurchase + orderData.total).toFixed(2)),
+              lastUpdate: new Date().toLocaleDateString('en-GB').replace(/\//g, '.')
+            }
           });
         }
       }
 
-      // Si todo el stock es válido, creamos el documento de la orden
+      // --- 3. FASE DE ESCRITURA ---
+      // Todas las lecturas y validaciones están completas. Ahora, ejecutamos todas las escrituras.
+      updates.forEach(u => transaction.update(u.ref, u.data));
+
+      // Creamos el documento de la orden.
       const orderRef = doc(collection(db, "orders"));
-      transaction.set(orderRef, orderData);
+      const finalOrderData = { ...orderData, status: 'Exitoso' as const };
+      transaction.set(orderRef, finalOrderData);
+
+      // --- 4. FASE DE RETORNO ---
+      if (clientData) {
+        return {
+          order: { ...finalOrderData, id: orderRef.id } as Order,
+          client: clientData,
+          prevBalance: previousBalance,
+          newBalance: newBalance
+        };
+      }
+
+      return null; // Si no hay datos de cliente, no hay nada que devolver.
     });
+    
+    // Transacción exitosa. Ahora sí, enviamos el correo (Fire and Forget)
+    if (emailNotificationData) {
+      sendOrderEmail(
+        emailNotificationData.order,
+        emailNotificationData.client,
+        emailNotificationData.prevBalance,
+        emailNotificationData.newBalance
+      );
+    }
+
   } catch (e) {
     console.error("Error en la transacción de la orden: ", e);
     throw e;
@@ -331,6 +384,51 @@ export const registerClientPayment = async (clientId: string, amount: number) =>
     console.error("Error registering payment: ", e);
     throw e;
   }
+};
+
+// 8. Obtener correos de administradores
+export const getAdminEmails = async (): Promise<string[]> => {
+  try {
+    const querySnapshot = await getDocs(collection(db, "adminemail"));
+    // Asumimos que los documentos tienen un campo llamado "email"
+    return querySnapshot.docs.map(doc => doc.data().email).filter(email => !!email);
+  } catch (e) {
+    console.error("Error fetching admin emails: ", e);
+    return []; // Retorna arreglo vacío si falla para no romper el flujo
+  }
+};
+
+// --- UTILS: Manejo de Errores ---
+export const getFriendlyErrorMessage = (error: any): string => {
+  // 1. Si es un string simple (errores manuales)
+  if (typeof error === 'string') return error;
+
+  // 2. Errores de Firebase (objetos con código)
+  if (error && error.code) {
+    switch (error.code) {
+      case 'permission-denied':
+        return '⛔ Permiso denegado: No tienes autorización para realizar esta operación (ej. ventas a crédito sin privilegios).';
+      case 'unavailable':
+        return '📡 Sin conexión: No se pudo conectar con el servidor. Verifica tu internet.';
+      case 'not-found':
+        return '🔍 Datos no encontrados: El registro que intentas consultar no existe.';
+      case 'resource-exhausted':
+        return '⚠️ Cuota excedida: El servicio está saturado temporalmente.';
+      case 'already-exists':
+        return '⚠️ Duplicado: El registro ya existe en el sistema.';
+      case 'unauthenticated':
+        return '🔒 No autenticado: Debes iniciar sesión nuevamente.';
+      default:
+        return `❌ Error del sistema (${error.code}): ${error.message}`;
+    }
+  }
+
+  // 3. Errores genéricos
+  if (error && error.message) {
+    return `❌ Error: ${error.message}`;
+  }
+
+  return '❌ Ocurrió un error desconocido al procesar la solicitud.';
 };
 
 // 4. Migración de Datos (Seed)

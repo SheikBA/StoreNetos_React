@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as XLSX from 'xlsx'; // Asegúrate de instalar: npm install xlsx
-import { getProducts, Product, updateAdminPassword, addProduct, updateProduct, deleteProduct, getOrders, Order, getClients, Client, updateClient, deleteClient, addClient, registerClientPayment, getCategories, Category, addCategory, updateCategory, deleteCategory } from '../services/storeService';
+import { getProducts, Product, updateAdminPassword, addProduct, updateProduct, deleteProduct, getOrders, Order, getClients, Client, updateClient, deleteClient, addClient, registerClientPayment, getCategories, Category, addCategory, updateCategory, deleteCategory, getFriendlyErrorMessage } from '../services/storeService';
 
 interface AdminPanelProps {
   onLogout: () => void;
@@ -330,8 +330,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
       setIsFormOpen(false);
       loadData();
     } catch (error) {
-      console.error("Error guardando producto:", error);
-      alert("Error al guardar el producto");
+      console.error("Error guardando producto:", error); 
+      alert(getFriendlyErrorMessage(error));
     }
   };
 
@@ -392,7 +392,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
       }
       setIsClientFormOpen(false);
       loadData();
-    } catch (error) { console.error(error); alert("Error al guardar cliente"); }
+    } catch (error) { 
+      console.error(error); 
+      alert(getFriendlyErrorMessage(error)); 
+    }
   };
 
   const handleRegisterPayment = async (e: React.FormEvent) => {
@@ -423,7 +426,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
       setPaymentAmount('');
     } catch (error) {
       console.error(error);
-      alert("❌ Error al registrar el pago");
+      alert(getFriendlyErrorMessage(error));
     }
   };
 
@@ -459,7 +462,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
       loadData();
     } catch (error) {
       console.error("Error guardando categoría:", error);
-      alert("Error al guardar la categoría");
+      alert(getFriendlyErrorMessage(error));
     }
   };
 

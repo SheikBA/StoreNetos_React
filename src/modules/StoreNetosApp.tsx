@@ -3,9 +3,8 @@ import Header from '../ui/layout/Header';
 import SidebarCategories from '../ui/layout/SidebarCategories';
 import MainCatalog from '../ui/layout/MainCatalog';
 import CartSidebar from '../ui/layout/CartSidebar';
-import Toast from '../components/Toast';
 import Footer from '../ui/layout/Footer';
-import { listenToProducts, listenToCategories, processOrderAndDecreaseStock, Product, Client, Category } from '../services/storeService';
+import { listenToProducts, listenToCategories, processOrderAndDecreaseStock, Product, Client, Category, getFriendlyErrorMessage } from '../services/storeService';
 import LoginPage from './LoginPage';
 import AdminPanel from './AdminPanel';
 
@@ -177,11 +176,11 @@ const StoreNetosApp: React.FC = () => {
       setToast({ message: `✅ ¡Orden completada! ${summary}`, type: 'success' });
       setCart([]);
     } catch (error) {
-      console.error("Error al procesar el pago:", error);
-      // Mostramos el error específico que viene desde la transacción (ej. falta de stock)
-      const errorMessage = typeof error === 'string' ? error : '❌ No se pudo procesar la orden.';
+      const err = error as any;
+      console.error("Error al procesar el pago:", err);
       setToast({
-        message: errorMessage,
+        // Usamos la función centralizada para traducir errores
+        message: getFriendlyErrorMessage(err),
         type: 'error'
       });
     }
@@ -220,6 +219,10 @@ const StoreNetosApp: React.FC = () => {
           --text-light: #888888;
           --bg-light: #f5f7fa;
           --shadow-card: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        @keyframes slideIn {
+          from { transform: translateY(100%); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
         }
       `}</style>
       <Header 
@@ -272,11 +275,44 @@ const StoreNetosApp: React.FC = () => {
         </div>
       )}
       {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
+        <div style={{
+          position: 'fixed',
+          bottom: '20px',
+          right: '20px',
+          backgroundColor: 'white', // 1. Fondo del contenedor: Blanco
+          padding: '16px 24px',
+          borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '15px',
+          zIndex: 9999,
+          maxWidth: '400px',
+          animation: 'slideIn 0.3s ease-out',
+          borderLeft: `5px solid ${toast.type === 'error' ? 'var(--danger)' : 'var(--success)'}` // Indicador visual de color
+        }}>
+          {/* 2. Icono intuitivo para el tipo de mensaje */}
+          <span style={{ fontSize: '24px' }}>{toast.type === 'error' ? '❌' : '✅'}</span>
+          
+          {/* 3. Mensaje con color de letra dinámico */}
+          <span style={{
+            fontSize: '14px',
+            lineHeight: '1.5',
+            flex: 1,
+            color: toast.type === 'error' ? 'var(--danger-dark)' : 'var(--text-main)'
+          }}>
+            {toast.message}
+          </span>
+          
+          {/* 4. Botón de cierre con tacha roja */}
+          <button 
+            onClick={() => setToast(null)}
+            title="Cerrar"
+            style={{ background: 'none', border: 'none', color: 'var(--danger)', fontSize: '28px', cursor: 'pointer', padding: '0', lineHeight: '1', opacity: 0.6 }}
+          >
+            &times;
+          </button>
+        </div>
       )}
 
       <Footer />
