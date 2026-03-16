@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { getProducts, Product, updateAdminPassword, addProduct, updateProduct, deleteProduct, getOrders, Order, getClients, Client, updateClient, deleteClient, addClient, registerClientPayment } from '../services/storeService';
+import React, { useEffect, useRef, useState } from 'react';
+import * as XLSX from 'xlsx'; // Asegúrate de instalar: npm install xlsx
+import { getProducts, Product, updateAdminPassword, addProduct, updateProduct, deleteProduct, getOrders, Order, getClients, Client, updateClient, deleteClient, addClient, registerClientPayment, getCategories, Category } from '../services/storeService';
 
 interface AdminPanelProps {
   onLogout: () => void;
@@ -10,6 +11,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -35,6 +37,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     name: '', uniqueId: '', balance: 0, department: '', totalPurchase: 0, payment: 0, lastUpdate: '', email: '', isBlocked: false
   });
 
+  // Estado para Carga Masiva
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadReport, setUploadReport] = useState<{row: number, name: string, status: 'success' | 'error', message: string}[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Helper para ordenamiento
   const handleWalletSort = (key: keyof Client) => {
     setWalletSort(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));
@@ -42,6 +51,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
 
   const [formData, setFormData] = useState<Omit<Product, 'id'>>({
     name: '',
+    internalId: '',
     price: 0,
     category: 'GALLETAS',
     image: '',
@@ -51,18 +61,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     isBlocked: false
   });
 
-  const CATEGORIES = [
-    { id: 'GAL01', name: 'GALLETAS' },
-    { id: 'SAB01', name: 'SABRITAS' },
-    { id: 'CAC01', name: 'CACAHUATES' },
-    { id: 'CHI01', name: 'CHICLES' },
-    { id: 'CHOC01', name: 'CHOCOLATES' },
-    { id: 'DUL01', name: 'DULCES' },
-    { id: 'CAF01', name: 'CAFÉS' },
-    { id: 'BEB01', name: 'BEBIDAS' },
-  ];
-
-
   useEffect(() => {
     loadData();
   }, []);
@@ -70,14 +68,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [productsData, ordersData, clientsData] = await Promise.all([
+      const [productsData, ordersData, clientsData, categoriesData] = await Promise.all([
         getProducts(),
         getOrders(),
-        getClients()
+        getClients(),
+        getCategories()
       ]);
       setProducts(productsData);
       setOrders(ordersData);
       setClients(clientsData);
+      setCategories(categoriesData);
     } catch (error) {
       console.error("Error cargando datos del panel:", error);
     } finally {
@@ -104,12 +104,123 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     }
   };
 
+  // --- Lógica de Carga Masiva Excel ---
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    setUploadProgress(0);
+    setUploadReport([]);
+
+    // 1. Iniciar simulación de Loader (6 segundos)
+    const totalTime = 6000;
+    const intervalTime = 100;
+    const steps = totalTime / intervalTime;
+    let currentStep = 0;
+
+    const timer = setInterval(() => {
+      currentStep++;
+      const progress = Math.min((currentStep / steps) * 100, 100);
+      setUploadProgress(progress);
+
+      if (currentStep >= steps) {
+        clearInterval(timer);
+        // Una vez termina la barra, procesamos el archivo
+        processExcelFile(file);
+      }
+    }, intervalTime);
+  };
+
+  const processExcelFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const bstr = evt.target?.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const data = XLSX.utils.sheet_to_json<any>(ws);
+
+      const report = [];
+      
+      // Mapas para validación rápida
+      const existingProductNames = new Set(products.map(p => (p.name || '').toLowerCase().trim()));
+      // Mapa de IDs internos existentes para evitar colisiones de código
+      const existingInternalIds = new Set(products.map(p => (p.internalId || '').toString().trim().toUpperCase()));
+      // Normalizamos categorías de DB: ID y Nombre a mayúsculas para comparar
+      const validCategoryNames = new Set(categories.map(c => (c.name || '').toUpperCase().trim()));
+      const validCategoryIds = new Set(categories.map(c => (c.id || '').toUpperCase().trim()));
+
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
+        const rowNum = i + 2; // +2 porque Excel tiene headers y es base 1
+        
+        // Validaciones
+        const internalId = row['ID'] || row['CODIGO'] || row['SKU'] || row['INTERNAL_ID'] || row['ID interno'];
+        const name = row['Nombre'] || row['nombre'] || row['NAME'];
+        const price = row['Precio'] || row['precio'] || row['PRICE'];
+        const category = row['Categoria'] || row['categoria'] || row['CATEGORY'];
+        const stock = row['Stock'] || row['stock'] || row['STOCK'];
+        
+        // 3. Validar campos obligatorios
+        if (!name || !price || !category || stock === undefined) {
+          report.push({ row: rowNum, name: name || 'Desconocido', status: 'error' as const, message: 'Faltan campos obligatorios' });
+          continue;
+        }
+
+        // 2. Validar duplicados por ID Interno (Prioridad)
+        if (internalId && existingInternalIds.has(String(internalId).toUpperCase().trim())) {
+          report.push({ row: rowNum, name: `${name} (ID: ${internalId})`, status: 'error' as const, message: 'ID Interno/SKU ya existe' });
+          continue;
+        }
+
+        // 3. Validar duplicados por Nombre (si no hubo error de ID)
+        if (!internalId && existingProductNames.has(String(name).toLowerCase().trim())) {
+          report.push({ row: rowNum, name: name, status: 'error' as const, message: 'Producto duplicado (ya existe)' });
+          continue;
+        }
+
+        // 4. Validar categoría existente
+        const catUpper = String(category).toUpperCase().trim();
+        if (!validCategoryNames.has(catUpper) && !validCategoryIds.has(catUpper)) {
+          report.push({ row: rowNum, name: name, status: 'error' as const, message: `Categoría "${category}" no existe en Firebase` });
+          continue;
+        }
+
+        // Intentar guardar en Firebase
+        try {
+          await addProduct({
+            name: String(name).trim(),
+            internalId: internalId ? String(internalId).trim() : '',
+            price: Number(price),
+            category: catUpper, // Guardamos en mayúsculas para consistencia
+            image: row['Imagen'] || '',
+            stock: Number(stock),
+            unit: row['Unidad'] || 'pz',
+            description: row['Descripcion'] || '',
+            isBlocked: false
+          });
+          report.push({ row: rowNum, name: name, status: 'success' as const, message: 'Registrado exitosamente' });
+        } catch (error) {
+          report.push({ row: rowNum, name: name, status: 'error' as const, message: 'Error interno de Firebase' });
+        }
+      }
+
+      setUploadReport(report);
+      setIsUploading(false); // Detener estado de carga para mostrar reporte
+      loadData(); // Recargar productos
+    };
+    reader.readAsBinaryString(file);
+  };
+
   // --- Handlers de Productos ---
 
   const handleAddNew = () => {
     setEditingProduct(null);
     setFormData({
       name: '',
+      internalId: '',
       price: 0,
       category: 'GALLETAS',
       image: '',
@@ -125,6 +236,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     setEditingProduct(product);
     setFormData({
       name: product.name,
+      internalId: product.internalId || '',
       price: product.price,
       category: product.category,
       image: product.image,
@@ -141,6 +253,58 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
       await deleteProduct(id);
       loadData();
     }
+  };
+
+  const handleBulkDelete = async () => {
+    if (products.length === 0) {
+      alert("El inventario ya está vacío.");
+      return;
+    }
+
+    if (window.confirm(`⚠️ ¡PELIGRO! ⚠️\n\nEstás a punto de ELIMINAR TODOS los ${products.length} productos del inventario.\n\n¿Estás seguro de que deseas continuar?`)) {
+      if (window.confirm("CONFIRMACIÓN FINAL:\n\nEsta acción no se puede deshacer. ¿Realmente quieres borrar todo?")) {
+        setLoading(true);
+        try {
+          // Ejecutamos todas las promesas de eliminación en paralelo
+          const deletePromises = products.map(p => deleteProduct(p.id));
+          await Promise.all(deletePromises);
+          alert("✅ Todos los productos han sido eliminados correctamente.");
+          loadData();
+        } catch (error) {
+          console.error("Error en eliminación masiva:", error);
+          alert("❌ Ocurrió un error al intentar eliminar algunos productos.");
+          loadData(); // Recargar para ver qué quedó
+        } finally {
+          setLoading(false);
+        }
+      }
+    }
+  };
+
+  const handleExportToExcel = () => {
+    if (products.length === 0) {
+      alert("No hay productos para exportar.");
+      return;
+    }
+
+    // Preparamos los datos, asegurando que todas las columnas deseadas estén presentes
+    const dataToExport = products.map(p => ({
+      'ID Firebase': p.id,
+      'ID Interno (SKU)': p.internalId || '',
+      'Nombre': p.name,
+      'Precio': p.price,
+      'Categoria': p.category,
+      'Stock': p.stock,
+      'Unidad': p.unit,
+      'URL Imagen': p.image,
+      'Descripcion': p.description || '',
+      'Bloqueado': p.isBlocked ? 'SI' : 'NO',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Inventario");
+    XLSX.writeFile(wb, `Inventario_StoreNetos_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const handleToggleBlock = async (product: Product) => {
@@ -217,7 +381,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
         await updateClient({ ...clientFormData, id: editingClient.id });
         setIsClientFormOpen(false);
         loadData();
+      } else {
+        await addClient(clientFormData);
       }
+      setIsClientFormOpen(false);
+      loadData();
     } catch (error) { console.error(error); alert("Error al guardar cliente"); }
   };
 
@@ -256,6 +424,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   // --- Filtrado de productos ---
   const filteredProducts = products.filter(product =>
     (product.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    String(product.internalId || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (product.category || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -625,65 +794,112 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', gap: '20px' }}>
               <h1 style={{ margin: 0, color: '#333', flexShrink: 0 }}>Gestión de Productos</h1>
               <input type="text" placeholder="Buscar por nombre o categoría..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '10px', width: '100%', maxWidth: '400px', border: '1px solid #ddd', borderRadius: '6px' }} />
-              <button onClick={handleAddNew} style={{ padding: '10px 20px', background: '#6b3fb5', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>+ Nuevo Producto</button>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={handleAddNew} style={{ padding: '10px 20px', background: '#6b3fb5', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>+ Nuevo</button>
+                <button onClick={handleExportToExcel} style={{ padding: '10px 20px', background: '#007bff', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>↓ Exportar</button>
+                <button onClick={handleBulkDelete} style={{ padding: '10px 20px', background: '#e74c3c', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>🗑️ Eliminar Productos</button>
+                <button onClick={() => setIsBulkModalOpen(true)} style={{ padding: '10px 20px', background: '#27ae60', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>↑ Carga Masiva</button>
+              </div>
             </div>
-            {loading ? <p>Cargando inventario...</p> :
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #eee' }}>
-                <tr>
-                  <th style={{ padding: '15px', color: '#666' }}>Imagen</th>
-                  <th style={{ padding: '15px', color: '#666' }}>Nombre</th>
-                  <th style={{ padding: '15px', color: '#666' }}>Categoría</th>
-                  <th style={{ padding: '15px', color: '#666' }}>Precio</th>
-                  <th style={{ padding: '15px', color: '#666' }}>Stock</th>
-                  <th style={{ padding: '15px', color: '#666' }}>Estado</th>
-                  <th style={{ padding: '15px', color: '#666' }}>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredProducts.map((product) => (
-                  <tr key={product.id} style={{ borderBottom: '1px solid #eee', opacity: product.isBlocked ? 0.5 : 1, backgroundColor: product.isBlocked ? '#f9f9f9' : 'white' }}>
-                    <td style={{ padding: '10px 15px' }}>
-                      <img 
-                        src={product.image || 'https://via.placeholder.com/40'} 
-                        alt={product.name} 
-                        style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }}
-                      />
-                    </td>
-                    <td style={{ padding: '10px 15px', fontWeight: '600' }}>{product.name}</td>
-                    <td style={{ padding: '10px 15px' }}>
-                      <span style={{ padding: '4px 8px', background: '#eee', borderRadius: '12px', fontSize: '12px' }}>
-                        {product.category}
-                      </span>
-                    </td>
-                    <td style={{ padding: '10px 15px' }}>${product.price.toFixed(2)}</td>
-                    <td style={{ padding: '10px 15px' }}>
-                      <span style={{ 
-                        color: product.stock < 5 ? '#e74c3c' : '#27ae60',
-                        fontWeight: 'bold'
-                      }}>
-                        {product.stock}
-                      </span>
-                    </td>
-                    <td style={{ padding: '10px 15px' }}>
-                      {product.isBlocked ? (
-                        <span style={{ color: '#e74c3c', fontWeight: 'bold', fontSize: '12px', border: '1px solid #e74c3c', padding: '2px 6px', borderRadius: '4px' }}>BLOQUEADO</span>
-                      ) : (
-                        <span style={{ color: '#27ae60', fontWeight: 'bold', fontSize: '12px' }}>ACTIVO</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '10px 15px' }}>
-                      <button onClick={() => handleEdit(product)} title="Editar" style={{ marginRight: '8px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '16px' }}>✏️</button>
-                      <button onClick={() => handleToggleBlock(product)} title={product.isBlocked ? "Desbloquear" : "Bloquear"} style={{ marginRight: '8px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '16px' }}>
-                        {product.isBlocked ? '🔓' : '🔒'}
-                      </button>
-                      <button onClick={() => handleDelete(product.id)} title="Eliminar" style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '16px' }}>🗑️</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            }
+            {loading ? (
+              <p>Cargando inventario...</p>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '1200px' }}>
+                  <thead style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #eee' }}>
+                    <tr>
+                      <th style={{ padding: '15px', color: '#666', fontSize: '12px', minWidth: '150px' }}>ID Producto</th>
+                      <th style={{ padding: '15px', color: '#666', fontSize: '12px' }}>ID Interno</th>
+                      <th style={{ padding: '15px', color: '#666' }}>Imagen</th>
+                      <th style={{ padding: '15px', color: '#666' }}>Nombre</th>
+                      <th style={{ padding: '15px', color: '#666' }}>Cat. Asignada</th>
+                      <th style={{ padding: '15px', color: '#666' }}>Cat. Sistema</th>
+                      <th style={{ padding: '15px', color: '#666' }}>Precio</th>
+                      <th style={{ padding: '15px', color: '#666' }}>Stock</th>
+                      <th style={{ padding: '15px', color: '#666' }}>Estado</th>
+                      <th style={{ padding: '15px', color: '#666' }}>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredProducts.map((product) => {
+                      // Lógica de Validación de Consistencia
+                      const prodCatVal = (product.category || '').trim();
+                      
+                      // Buscamos si el valor del producto coincide con ID o Nombre de alguna categoría existente
+                      const matchedCategory = categories.find(c => 
+                        c.id === prodCatVal || 
+                        (c.name || '').toUpperCase() === prodCatVal.toUpperCase()
+                      );
+
+                      // Si no hay match y no es un producto nuevo vacío, es una inconsistencia
+                      const isConsistent = !!matchedCategory;
+                      const rowBg = !isConsistent 
+                        ? '#ffebee' // Rojo claro para error
+                        : product.isBlocked ? '#f9f9f9' : 'white'; // Normal o Bloqueado
+
+                      return (
+                      <tr key={product.id} style={{ borderBottom: '1px solid #eee', opacity: product.isBlocked ? 0.5 : 1, backgroundColor: rowBg }}>
+                        <td style={{ padding: '10px 15px', fontSize: '10px', color: '#888', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                          {product.id}
+                        </td>
+                        <td style={{ padding: '10px 15px', fontSize: '12px', fontWeight: 'bold', color: '#555', fontFamily: 'monospace' }}>
+                          {product.internalId || <span style={{color:'#ccc', fontStyle: 'italic'}}>-</span>}
+                        </td>
+                      <td style={{ padding: '10px 15px' }}>
+                        <img 
+                          src={product.image || 'https://via.placeholder.com/40'} 
+                          alt={product.name} 
+                          style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }}
+                        />
+                      </td>
+                      <td style={{ padding: '10px 15px', fontWeight: '600' }}>{product.name}</td>
+
+                      {/* Columna: Valor que tiene el producto actualmente */}
+                      <td style={{ padding: '10px 15px' }}>
+                        <span style={{ padding: '4px 8px', background: '#fff', border: '1px solid #ccc', borderRadius: '4px', fontSize: '12px', fontFamily: 'monospace' }}>
+                          {product.category}
+                        </span>
+                      </td>
+
+                      {/* Columna: Validación contra el catálogo */}
+                      <td style={{ padding: '10px 15px', minWidth: '120px' }}>
+                        {matchedCategory ? (
+                          <span style={{ color: '#27ae60', fontWeight: 'bold', fontSize: '12px' }}>✅ {matchedCategory.name}</span>
+                        ) : (
+                          <span style={{ color: '#c0392b', fontWeight: 'bold', fontSize: '12px' }}>⚠️ NO EXISTE</span>
+                        )}
+                      </td>
+
+                      <td style={{ padding: '10px 15px' }}>${product.price.toFixed(2)}</td>
+                      <td style={{ padding: '10px 15px' }}>
+                        <span style={{ 
+                          color: product.stock < 5 ? '#e74c3c' : '#27ae60',
+                          fontWeight: 'bold'
+                        }}>
+                          {product.stock}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 15px' }}>
+                        {product.isBlocked ? (
+                          <span style={{ color: '#e74c3c', fontWeight: 'bold', fontSize: '12px', border: '1px solid #e74c3c', padding: '2px 6px', borderRadius: '4px' }}>BLOQUEADO</span>
+                        ) : (
+                          <span style={{ color: '#27ae60', fontWeight: 'bold', fontSize: '12px' }}>ACTIVO</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '10px 15px' }}>
+                        <button onClick={() => handleEdit(product)} title="Editar" style={{ marginRight: '8px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '16px' }}>✏️</button>
+                        <button onClick={() => handleToggleBlock(product)} title={product.isBlocked ? "Desbloquear" : "Bloquear"} style={{ marginRight: '8px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '16px' }}>
+                          {product.isBlocked ? '🔓' : '🔒'}
+                        </button>
+                        <button onClick={() => handleDelete(product.id)} title="Eliminar" style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '16px' }}>🗑️</button>
+                      </td>
+                    </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </>
         )}
 
@@ -693,9 +909,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
             <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '8px', width: '500px', maxHeight: '90vh', overflowY: 'auto' }}>
               <h2 style={{ marginTop: 0 }}>{editingProduct ? 'Editar Producto' : 'Nuevo Producto'}</h2>
               <form onSubmit={handleSubmitProduct}>
-                <div style={{ marginBottom: '15px' }}>
-                  <label style={{ display: 'block', marginBottom: '5px' }}>Nombre</label>
-                  <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }} />
+                <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
+                  <div style={{ flex: 1 }}>
+                     <label style={{ display: 'block', marginBottom: '5px' }}>ID Interno / SKU (Opcional)</label>
+                     <input type="text" value={formData.internalId || ''} onChange={e => setFormData({...formData, internalId: e.target.value})} placeholder="Ej. A-001" style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }} />
+                  </div>
+                  <div style={{ flex: 2 }}>
+                    <label style={{ display: 'block', marginBottom: '5px' }}>Nombre</label>
+                    <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }} />
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
                   <div style={{ flex: 1 }}>
@@ -710,7 +932,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                 <div style={{ marginBottom: '15px' }}>
                   <label style={{ display: 'block', marginBottom: '5px' }}>Categoría</label>
                   <select value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}>
-                    {CATEGORIES.map(cat => (
+                    {categories.filter(c => c.id !== 'ALL').map(cat => ( // Filtramos 'ALL' que es para la vista principal
                       <option key={cat.id} value={cat.name}>{cat.name}</option>
                     ))}
                   </select>
@@ -728,6 +950,74 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   <button type="submit" style={{ padding: '10px 20px', background: '#6b3fb5', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Guardar</button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de Carga Masiva */}
+        {isBulkModalOpen && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1200 }}>
+            <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '12px', width: '600px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+              <h2 style={{ marginTop: 0, color: '#27ae60' }}>📂 Carga Masiva de Productos</h2>
+              
+              {isUploading ? (
+                <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                  <h3 style={{ color: '#666' }}>Analizando archivo...</h3>
+                  <div style={{ width: '100%', height: '20px', backgroundColor: '#eee', borderRadius: '10px', overflow: 'hidden', marginTop: '20px' }}>
+                    <div style={{ width: `${uploadProgress}%`, height: '100%', backgroundColor: '#27ae60', transition: 'width 0.1s linear' }}></div>
+                  </div>
+                  <p style={{ marginTop: '10px', fontWeight: 'bold' }}>{Math.round(uploadProgress)}%</p>
+                  <p style={{ fontSize: '12px', color: '#999' }}>Validando duplicados y categorías en Firebase...</p>
+                </div>
+              ) : uploadReport.length > 0 ? (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                    <h3 style={{ margin: 0 }}>Resultados de la Carga</h3>
+                    <div style={{ fontSize: '14px' }}>
+                      <span style={{ color: '#27ae60', fontWeight: 'bold', marginRight: '10px' }}>Exitosos: {uploadReport.filter(r => r.status === 'success').length}</span>
+                      <span style={{ color: '#e74c3c', fontWeight: 'bold' }}>Errores: {uploadReport.filter(r => r.status === 'error').length}</span>
+                    </div>
+                  </div>
+                  
+                  <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '6px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                      <thead style={{ background: '#f9f9f9', position: 'sticky', top: 0 }}>
+                        <tr>
+                          <th style={{ padding: '8px', textAlign: 'left' }}>Fila</th>
+                          <th style={{ padding: '8px', textAlign: 'left' }}>Producto</th>
+                          <th style={{ padding: '8px', textAlign: 'left' }}>Estado</th>
+                          <th style={{ padding: '8px', textAlign: 'left' }}>Mensaje</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {uploadReport.map((item, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid #eee', background: item.status === 'error' ? '#fff5f5' : 'white' }}>
+                            <td style={{ padding: '8px' }}>{item.row}</td>
+                            <td style={{ padding: '8px', fontWeight: 'bold' }}>{item.name}</td>
+                            <td style={{ padding: '8px' }}>{item.status === 'success' ? '✅' : '❌'}</td>
+                            <td style={{ padding: '8px', color: item.status === 'error' ? '#d50000' : '#2e7d32' }}>{item.message}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ marginTop: '20px', textAlign: 'right' }}>
+                    <button onClick={() => { setIsBulkModalOpen(false); setUploadReport([]); }} style={{ padding: '10px 20px', background: '#6b3fb5', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Cerrar</button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <p style={{ marginBottom: '20px', color: '#666', lineHeight: '1.5' }}>
+                    Selecciona un archivo Excel (.xlsx) con las siguientes columnas obligatorias: 
+                    <br/><strong>Nombre, Precio, Categoria, Stock</strong>.
+                    <br/><small>Opcionales: <strong>ID / CODIGO / SKU</strong>, Imagen, Unidad, Descripcion.</small>
+                  </p>
+                  <input type="file" accept=".xlsx, .xls" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'block', width: '100%', padding: '20px', border: '2px dashed #ccc', borderRadius: '8px', textAlign: 'center', cursor: 'pointer' }} />
+                  <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
+                    <button onClick={() => setIsBulkModalOpen(false)} style={{ padding: '10px 20px', background: '#ccc', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

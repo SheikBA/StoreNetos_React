@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 // Definimos la estructura de nuestros datos
 export interface Product {
   id: string; // Firestore usa strings para IDs
+  internalId?: string; // ID Interno / SKU
   name: string;
   price: number;
   category: string;
