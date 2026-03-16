@@ -50,14 +50,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   };
 
   const [formData, setFormData] = useState<Omit<Product, 'id'>>({
-    name: '',
     internalId: '',
-    price: 0,
-    category: 'GALLETAS',
-    image: '',
-    stock: 0,
-    unit: 'pz',
+    name: '',
     description: '',
+    category: '',
+    unit: 'pz',
+    price: 0,
+    stock: 0,
+    image: '',      
     isBlocked: false
   });
 
@@ -89,7 +89,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     e.preventDefault();
     if (!passForm.newPass) return;
     
-    setPassMsg('Procesando...');
+    setPassMsg('Cargando & Procesando...');
     try {
       const success = await updateAdminPassword(passForm.username, passForm.newPass);
       if (success) {
@@ -160,11 +160,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
         const internalId = row['ID'] || row['CODIGO'] || row['SKU'] || row['INTERNAL_ID'] || row['ID interno'];
         const name = row['Nombre'] || row['nombre'] || row['NAME'];
         const price = row['Precio'] || row['precio'] || row['PRICE'];
-        const category = row['Categoria'] || row['categoria'] || row['CATEGORY'];
-        const stock = row['Stock'] || row['stock'] || row['STOCK'];
+        const category = row['Categoria'] || row['categoria']  || row['categories'] || row['CATEGORY'];
+        const stock = row['Stock'] || row['stock'] || row['Inventario'] || row['STOCK'];
         
         // 3. Validar campos obligatorios
-        if (!name || !price || !category || stock === undefined) {
+        if (!name || !internalId || !price || !category || stock === undefined) {
           report.push({ row: rowNum, name: name || 'Desconocido', status: 'error' as const, message: 'Faltan campos obligatorios' });
           continue;
         }
@@ -187,19 +187,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
           report.push({ row: rowNum, name: name, status: 'error' as const, message: `Categoría "${category}" no existe en Firebase` });
           continue;
         }
-
         // Intentar guardar en Firebase
         try {
           await addProduct({
+            internalId: String(internalId).trim(),
             name: String(name).trim(),
-            internalId: internalId ? String(internalId).trim() : '',
-            price: Number(price),
-            category: catUpper, // Guardamos en mayúsculas para consistencia
-            image: row['Imagen'] || '',
-            stock: Number(stock),
-            unit: row['Unidad'] || 'pz',
             description: row['Descripcion'] || '',
-            isBlocked: false
+            category: catUpper, // Guardamos en mayúsculas para consistencia
+            unit: row['Unidad'] || 'pz',
+            price: Number(price),
+            stock: Number(stock),         
+            isBlocked: false,           
+            image: row['Imagen'] || '',
+           
+                        
           });
           report.push({ row: rowNum, name: name, status: 'success' as const, message: 'Registrado exitosamente' });
         } catch (error) {
