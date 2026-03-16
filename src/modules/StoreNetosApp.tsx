@@ -158,8 +158,8 @@ const StoreNetosApp: React.FC = () => {
     }));
 
     try {
-      // La nueva función se encarga de crear la orden y descontar el stock atómicamente
-      await processOrderAndDecreaseStock(orderData, itemsToUpdate);
+      // La función ahora devuelve la URL de WhatsApp o null
+      const whatsappUrl = await processOrderAndDecreaseStock(orderData, itemsToUpdate);
 
       // Si la transacción es exitosa, actualizamos el inventario local
       setInventory(prevInventory => {
@@ -173,8 +173,15 @@ const StoreNetosApp: React.FC = () => {
       });
 
       const summary = `Pago de $${total.toFixed(2)} registrado para ${client.name}`;
-      setToast({ message: `✅ ¡Orden completada! ${summary}`, type: 'success' });
+      setToast({
+        message: `✅ ¡Orden completada! ${summary}`,
+        type: 'success'
+      });
       setCart([]);
+
+      if (whatsappUrl) {
+        window.open(whatsappUrl, '_blank');
+      }
     } catch (error) {
       const err = error as any;
       console.error("Error al procesar el pago:", err);

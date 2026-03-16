@@ -2,6 +2,7 @@ import { collection, getDocs, writeBatch, doc, runTransaction, getDoc, updateDoc
 import { db } from "../firebase/config";
 import bcrypt from 'bcryptjs';
 import { sendOrderEmail } from "./emailService";
+import { createWhatsAppNotificationUrl } from './whatsappService';
 
 // Definimos la estructura de nuestros datos
 export interface Product {
@@ -136,7 +137,7 @@ export const getClientByUniqueId = async (uniqueId: string): Promise<Client | nu
 };
 
 // 3. Procesar Orden y Descontar Stock (Transacción Atómica)
-export const processOrderAndDecreaseStock = async (orderData: any, items: { id: string, quantity: number }[]) => {
+export const processOrderAndDecreaseStock = async (orderData: any, items: { id: string, quantity: number }[]): Promise<string | null> => {
   try {
     // La transacción ahora devolverá los datos para el correo, o null si no son necesarios.
     const emailNotificationData = await runTransaction(db, async (transaction) => {
@@ -228,7 +229,12 @@ export const processOrderAndDecreaseStock = async (orderData: any, items: { id: 
         emailNotificationData.prevBalance,
         emailNotificationData.newBalance
       );
+
+      // Crea y devuelve la URL de WhatsApp para que la UI la maneje
+      return createWhatsAppNotificationUrl(emailNotificationData.order, emailNotificationData.client);
     }
+
+    return null; // No hay URL si no hay datos de notificación
 
   } catch (e) {
     console.error("Error en la transacción de la orden: ", e);
