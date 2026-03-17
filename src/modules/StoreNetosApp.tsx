@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Header from '../ui/layout/Header';
 import SidebarCategories from '../ui/layout/SidebarCategories';
 import MainCatalog from '../ui/layout/MainCatalog';
@@ -18,6 +18,10 @@ const StoreNetosApp: React.FC = () => {
   const [inventory, setInventory] = useState<{ [key: string]: number }>({});
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [view, setView] = useState<'store' | 'login' | 'admin'>('store');
+  const [hideNoStock, setHideNoStock] = useState(false); // Estado para ocultar agotados
+
+  // Ref para el contenedor del mensaje (toast)
+  const toastRef = useRef<HTMLDivElement>(null);
 
   // Cargar datos iniciales y establecer listener en tiempo real para productos
   useEffect(() => {
@@ -57,6 +61,29 @@ const StoreNetosApp: React.FC = () => {
     localStorage.setItem('storeNetosCart', JSON.stringify(cart));
   }, [cart]);
 
+  // Efecto para manejar el cierre automático de notificaciones
+  useEffect(() => {
+    // Función que se ejecuta al hacer clic en cualquier parte del documento
+    const handleClickOutside = (event: MouseEvent) => {
+      // Si el mensaje existe y el clic fue FUERA de él, se cierra.
+      if (toastRef.current && !toastRef.current.contains(event.target as Node)) {
+        setToast(null);
+      }
+    };
+
+    // Si hay un mensaje visible, se añade el "escuchador" de clics.
+    if (toast) {
+      // Se usa un timeout para evitar que el mismo clic que abre el mensaje lo cierre inmediatamente.
+      setTimeout(() => document.addEventListener('click', handleClickOutside), 0);
+    }
+
+    // Función de limpieza: se elimina el "escuchador" cuando el mensaje se cierra.
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [toast]); // Este efecto se ejecuta cada vez que el estado del mensaje cambia.
+
+
   // Nota: initializeInventory se ha movido al useEffect de carga de datos
 
   // Filtrar productos por categoría
@@ -88,11 +115,17 @@ const StoreNetosApp: React.FC = () => {
   // Ordenar productos
   const sortedProducts = useMemo(() => {
     let sorted = [...filteredProducts];
+
+    // Filtrar por stock si la opción está activa
+    if (hideNoStock) {
+      sorted = sorted.filter(p => (inventory[p.id] ?? p.stock) > 0);
+    }
+
     if (sortType === 'price-asc') sorted.sort((a, b) => a.price - b.price);
     if (sortType === 'price-desc') sorted.sort((a, b) => b.price - a.price);
     if (sortType === 'alpha') sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     return sorted;
-  }, [filteredProducts, sortType]);
+  }, [filteredProducts, sortType, hideNoStock, inventory]);
 
   // Carrito con detalles de producto
   const cartItems = cart.map(item => ({
@@ -105,7 +138,7 @@ const StoreNetosApp: React.FC = () => {
   // Handlers
   const handleAddToCart = (product: Product) => {
     if (product.isBlocked) {
-      setToast({ message: '⛔ Este producto no está disponible para la venta actualmente, Necesitas quitarlo de tú carrito.', type: 'error' });
+      setToast({ message: '⛔ Este producto no está disponible para la venta actualmente. Necesitas quitarlo de tu carrito.', type: 'error' });
       return;
     }
 
@@ -245,6 +278,31 @@ const StoreNetosApp: React.FC = () => {
           onSelect={setSelectedCategory}
         />
         <div className="catalog-section">
+          {/* Barra de herramientas del catálogo */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px', padding: '0 10px' }}>
+            <button 
+              onClick={() => setHideNoStock(!hideNoStock)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 16px',
+                borderRadius: '20px',
+                border: hideNoStock ? '1px solid #4caf50' : '1px solid #ddd',
+                background: hideNoStock ? '#e8f5e9' : 'white',
+                color: hideNoStock ? '#2e7d32' : '#666',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '14px',
+                transition: 'all 0.2s',
+                boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
+              }}
+              title={hideNoStock ? "Clic para ver todos los productos" : "Clic para ver solo productos con stock"}
+            >
+              {hideNoStock ? '👁️ Mostrar Agotados' : '🚫 Ocultar Agotados'}
+            </button>
+          </div>
+
           <MainCatalog
             products={sortedProducts}
             categories={categories}
@@ -282,8 +340,10 @@ const StoreNetosApp: React.FC = () => {
         </div>
       )}
       {toast && (
-        <div style={{
-          position: 'fixed',
+        <div
+          ref={toastRef} // Asignamos la referencia al contenedor
+          style={{
+            position: 'fixed',
           bottom: '20px',
           right: '20px',
           backgroundColor: 'white', // 1. Fondo del contenedor: Blanco
@@ -297,7 +357,8 @@ const StoreNetosApp: React.FC = () => {
           maxWidth: '400px',
           animation: 'slideIn 0.3s ease-out',
           borderLeft: `5px solid ${toast.type === 'error' ? 'var(--danger)' : 'var(--success)'}` // Indicador visual de color
-        }}>
+          }}
+        >
           {/* 2. Icono intuitivo para el tipo de mensaje */}
           <span style={{ fontSize: '24px' }}>{toast.type === 'error' ? '❌' : '✅'}</span>
           

@@ -1,6 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
-import * as XLSX from 'xlsx'; // Asegúrate de instalar: npm install xlsx
-import { getProducts, Product, updateAdminPassword, addProduct, updateProduct, deleteProduct, getOrders, Order, getClients, Client, updateClient, deleteClient, addClient, registerClientPayment, getCategories, Category, addCategory, updateCategory, deleteCategory, getFriendlyErrorMessage } from '../services/storeService';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import * as XLSX from 'xlsx';
+import { 
+  getProducts, Product, updateAdminPassword, addProduct, updateProduct, deleteProduct, 
+  getOrders, Order, getClients, Client, updateClient, deleteClient, addClient, 
+  registerClientPayment, getCategories, Category, addCategory, updateCategory, 
+  deleteCategory, getFriendlyErrorMessage 
+} from '../services/storeService';
 
 interface AdminPanelProps {
   onLogout: () => void;
@@ -15,56 +20,44 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Estado para la sección de seguridad
   const [passForm, setPassForm] = useState({ username: 'Vladislav', newPass: '' });
   const [passMsg, setPassMsg] = useState('');
 
+  const [topClientsLimit, setTopClientsLimit] = useState(5);
+  const [topClientsSegment, setTopClientsSegment] = useState<'all' | 'credito' | 'efectivo'>('all');
+
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  
-  // Estado para el detalle de cartera
+  const [formData, setFormData] = useState<Omit<Product, 'id'>>({
+    internalId: '', name: '', description: '', category: '', unit: 'pz', price: 0, stock: 0, image: '', isBlocked: false
+  });
+
   const [selectedClientWallet, setSelectedClientWallet] = useState<Client | null>(null);
   const [walletSearchTerm, setWalletSearchTerm] = useState('');
   const [walletSort, setWalletSort] = useState<{ key: keyof Client; direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
-  
-  // Estado para formulario de cliente
-  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState('');
   
   const [isClientFormOpen, setIsClientFormOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [clientFormData, setClientFormData] = useState<Omit<Client, 'id'>>({
     name: '', uniqueId: '', balance: 0, department: '', totalPurchase: 0, payment: 0, lastUpdate: '', email: '', isBlocked: false
   });
+  
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState('');
 
-  // Estado para formulario de categorías
   const [isCategoryFormOpen, setIsCategoryFormOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [categoryFormData, setCategoryFormData] = useState<Omit<Category, 'id'>>({ name: '', internalId: '' });
 
-  // Estado para Carga Masiva
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadReport, setUploadReport] = useState<{row: number, name: string, status: 'success' | 'error', message: string}[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Helper para ordenamiento
   const handleWalletSort = (key: keyof Client) => {
     setWalletSort(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));
   };
-
-  const [formData, setFormData] = useState<Omit<Product, 'id'>>({
-    internalId: '',
-    name: '',
-    description: '',
-    category: '',
-    unit: 'pz',
-    price: 0,
-    stock: 0,
-    image: '',      
-    isBlocked: false
-  });
 
   useEffect(() => {
     loadData();
@@ -109,8 +102,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     }
   };
 
-  // --- Lógica de Carga Masiva Excel ---
-
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -119,7 +110,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     setUploadProgress(0);
     setUploadReport([]);
 
-    // 1. Iniciar simulación de Loader (6 segundos)
     const totalTime = 6000;
     const intervalTime = 100;
     const steps = totalTime / intervalTime;
@@ -132,7 +122,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
 
       if (currentStep >= steps) {
         clearInterval(timer);
-        // Una vez termina la barra, procesamos el archivo
         processExcelFile(file);
       }
     }, intervalTime);
@@ -149,63 +138,52 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
 
       const report: { row: number; name: string; status: 'success' | 'error'; message: string }[] = [];
       
-      // Mapas para validación rápida
       const existingProductNames = new Set(products.map(p => (p.name || '').toLowerCase().trim()));
-      // Mapa de IDs internos existentes para evitar colisiones de código
       const existingInternalIds = new Set(products.map(p => (p.internalId || '').toString().trim().toUpperCase()));
-      // Normalizamos categorías de DB: ID y Nombre a mayúsculas para comparar
       const validCategoryNames = new Set(categories.map(c => (c.name || '').toUpperCase().trim()));
       const validCategoryIds = new Set(categories.map(c => (c.id || '').toUpperCase().trim()));
 
       for (let i = 0; i < data.length; i++) {
         const row = data[i];
-        const rowNum = i + 2; // +2 porque Excel tiene headers y es base 1
+        const rowNum = i + 2;
         
-        // Validaciones
         const internalId = row['ID'] || row['CODIGO'] || row['SKU'] || row['INTERNAL_ID'] || row['ID interno'];
         const name = row['Nombre'] || row['nombre'] || row['NAME'];
         const price = row['Precio'] || row['precio'] || row['PRICE'];
         const category = row['Categoria'] || row['categoria']  || row['categories'] || row['CATEGORY'];
         const stock = row['Stock'] || row['stock'] || row['Inventario'] || row['STOCK'];
         
-        // 3. Validar campos obligatorios
         if (!name || !internalId || !price || !category || stock === undefined) {
           report.push({ row: rowNum, name: name || 'Desconocido', status: 'error' as const, message: 'Faltan campos obligatorios' });
           continue;
         }
 
-        // 2. Validar duplicados por ID Interno (Prioridad)
         if (internalId && existingInternalIds.has(String(internalId).toUpperCase().trim())) {
           report.push({ row: rowNum, name: `${name} (ID: ${internalId})`, status: 'error' as const, message: 'ID Interno/SKU ya existe' });
           continue;
         }
 
-        // 3. Validar duplicados por Nombre (si no hubo error de ID)
         if (!internalId && existingProductNames.has(String(name).toLowerCase().trim())) {
           report.push({ row: rowNum, name: name, status: 'error' as const, message: 'Producto duplicado (ya existe)' });
           continue;
         }
 
-        // 4. Validar categoría existente
         const catUpper = String(category).toUpperCase().trim();
         if (!validCategoryNames.has(catUpper) && !validCategoryIds.has(catUpper)) {
           report.push({ row: rowNum, name: name, status: 'error' as const, message: `Categoría "${category}" no existe en Firebase` });
           continue;
         }
-        // Intentar guardar en Firebase
         try {
           await addProduct({
             internalId: String(internalId).trim(),
             name: String(name).trim(),
             description: row['Descripcion'] || '',
-            category: catUpper, // Guardamos en mayúsculas para consistencia
+            category: catUpper,
             unit: row['Unidad'] || 'pz',
             price: Number(price),
             stock: Number(stock),         
             isBlocked: false,           
             image: row['Imagen'] || '',
-           
-                        
           });
           report.push({ row: rowNum, name: name, status: 'success' as const, message: 'Registrado exitosamente' });
         } catch (error) {
@@ -214,26 +192,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
       }
 
       setUploadReport(report);
-      setIsUploading(false); // Detener estado de carga para mostrar reporte
-      loadData(); // Recargar productos
+      setIsUploading(false);
+      loadData();
     };
     reader.readAsBinaryString(file);
   };
 
-  // --- Handlers de Productos ---
-
   const handleAddNew = () => {
     setEditingProduct(null);
     setFormData({
-      name: '',
-      internalId: '',
-      price: 0,
-      category: 'GALLETAS',
-      image: '',
-      stock: 0,
-      unit: 'pz',
-      description: '',
-      isBlocked: false
+      name: '', internalId: '', price: 0, category: 'GALLETAS', image: '', stock: 0, unit: 'pz', description: '', isBlocked: false
     });
     setIsFormOpen(true);
   };
@@ -241,15 +209,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const handleEdit = (product: Product) => {
     setEditingProduct(product);
     setFormData({
-      name: product.name,
-      internalId: product.internalId || '',
-      price: product.price,
-      category: product.category,
-      image: product.image,
-      stock: product.stock,
-      unit: product.unit,
-      description: product.description || '',
-      isBlocked: product.isBlocked || false
+      name: product.name, internalId: product.internalId || '', price: product.price, category: product.category, image: product.image, stock: product.stock, unit: product.unit, description: product.description || '', isBlocked: product.isBlocked || false
     });
     setIsFormOpen(true);
   };
@@ -271,7 +231,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
       if (window.confirm("CONFIRMACIÓN FINAL:\n\nEsta acción no se puede deshacer. ¿Realmente quieres borrar todo?")) {
         setLoading(true);
         try {
-          // Ejecutamos todas las promesas de eliminación en paralelo
           const deletePromises = products.map(p => deleteProduct(p.id));
           await Promise.all(deletePromises);
           alert("✅ Todos los productos han sido eliminados correctamente.");
@@ -279,7 +238,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
         } catch (error) {
           console.error("Error en eliminación masiva:", error);
           alert("❌ Ocurrió un error al intentar eliminar algunos productos.");
-          loadData(); // Recargar para ver qué quedó
+          loadData();
         } finally {
           setLoading(false);
         }
@@ -293,18 +252,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
       return;
     }
 
-    // Preparamos los datos, asegurando que todas las columnas deseadas estén presentes
     const dataToExport = products.map(p => ({
-      'ID Firebase': p.id,
-      'ID Interno (SKU)': p.internalId || '',
-      'Nombre': p.name,
-      'Precio': p.price,
-      'Categoria': p.category,
-      'Stock': p.stock,
-      'Unidad': p.unit,
-      'URL Imagen': p.image,
-      'Descripcion': p.description || '',
-      'Bloqueado': p.isBlocked ? 'SI' : 'NO',
+      'ID Firebase': p.id, 'ID Interno (SKU)': p.internalId || '', 'Nombre': p.name, 'Precio': p.price, 'Categoría': p.category, 'Stock': p.stock, 'Unidad': p.unit, 'URL Imagen': p.image, 'Descripción': p.description || '', 'Bloqueado': p.isBlocked ? 'SI' : 'NO',
     }));
 
     const ws = XLSX.utils.json_to_sheet(dataToExport);
@@ -316,7 +265,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const handleToggleBlock = async (product: Product) => {
     const newStatus = !product.isBlocked;
     await updateProduct({ ...product, isBlocked: newStatus });
-    loadData(); // Recargar para ver cambios
+    loadData();
   };
 
   const handleSubmitProduct = async (e: React.FormEvent) => {
@@ -335,19 +284,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     }
   };
 
-  // --- Handlers de Clientes ---
   const handleAddNewClient = () => {
     setEditingClient(null);
     setClientFormData({
-      name: '',
-      uniqueId: '',
-      balance: 0,
-      department: '',
-      totalPurchase: 0,
-      payment: 0,
-      lastUpdate: new Date().toLocaleDateString('en-GB').replace(/\//g, '.'),
-      email: '',
-      isBlocked: false
+      name: '', uniqueId: '', balance: 0, department: '', totalPurchase: 0, payment: 0, lastUpdate: new Date().toLocaleDateString('en-GB').replace(/\//g, '.'), email: '', isBlocked: false
     });
     setIsClientFormOpen(true);
   };
@@ -355,15 +295,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const handleEditClient = (client: Client) => {
     setEditingClient(client);
     setClientFormData({
-      name: client.name,
-      uniqueId: client.uniqueId,
-      balance: client.balance,
-      department: client.department,
-      totalPurchase: client.totalPurchase,
-      payment: client.payment,
-      lastUpdate: client.lastUpdate,
-      email: client.email || '',
-      isBlocked: client.isBlocked || false
+      name: client.name, uniqueId: client.uniqueId, balance: client.balance, department: client.department, totalPurchase: client.totalPurchase, payment: client.payment, lastUpdate: client.lastUpdate, email: client.email || '', isBlocked: client.isBlocked || false
     });
     setIsClientFormOpen(true);
   };
@@ -385,8 +317,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     try {
       if (editingClient) {
         await updateClient({ ...clientFormData, id: editingClient.id });
-        setIsClientFormOpen(false);
-        loadData();
       } else {
         await addClient(clientFormData);
       }
@@ -417,7 +347,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     try {
       await registerClientPayment(selectedClientWallet.id, amount);
       
-      // Actualizar vista localmente para feedback instantáneo
       const updatedClient = { ...selectedClientWallet, balance: selectedClientWallet.balance - amount };
       setSelectedClientWallet(updatedClient);
       setClients(prev => prev.map(c => c.id === updatedClient.id ? updatedClient : c));
@@ -430,7 +359,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     }
   };
 
-  // --- Handlers de Categorías ---
   const handleAddNewCategory = () => {
     setEditingCategory(null);
     setCategoryFormData({ name: '', internalId: '' });
@@ -466,21 +394,47 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     }
   };
 
-  // --- Filtrado de productos ---
   const filteredProducts = products.filter(product =>
     (product.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     String(product.internalId || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (product.category || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // --- Filtrado de categorías ---
   const filteredCategories = categories.filter(cat => 
     (cat.name || '').toLowerCase().includes(searchTerm.toLowerCase()) && cat.id !== 'ALL'
   );
 
-  // --- Dashboard Calculations ---
   const totalRevenue = orders.reduce((sum, order) => sum + order.total, 0);
   const totalOrders = orders.length;
+
+  const totalRevenueEfectivo = orders
+    .filter(o => o.paymentType === 'efectivo')
+    .reduce((sum, order) => sum + order.total, 0);
+  const totalRevenueCredito = orders
+    .filter(o => o.paymentType === 'credito')
+    .reduce((sum, order) => sum + order.total, 0);
+
+  const topClients = useMemo(() => {
+    const filteredOrders = topClientsSegment === 'all'
+        ? orders
+        : orders.filter(o => o.paymentType === topClientsSegment);
+
+    const clientPurchases = filteredOrders.reduce((acc, order) => {
+        if (order.clientId) {
+            acc[order.clientId] = (acc[order.clientId] || 0) + order.total;
+        }
+        return acc;
+    }, {} as Record<string, number>);
+
+    const sortedClientIds = Object.keys(clientPurchases).sort((a, b) => clientPurchases[b] - clientPurchases[a]);
+
+    return sortedClientIds.slice(0, topClientsLimit).map(clientId => ({
+        id: clientId,
+        name: clients.find(c => c.id === clientId)?.name || 'Cliente Desconocido',
+        total: clientPurchases[clientId]
+    }));
+  }, [orders, clients, topClientsLimit, topClientsSegment]);
+
   const averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
   const productSales: { [key: string]: { name: string, quantity: number } } = {};
@@ -512,7 +466,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     return acc;
   }, {} as { [key: string]: number });
 
-  // --- Detección de Clientes Duplicados ---
   const uniqueIdCounts = clients.reduce((acc, client) => {
     if (client.uniqueId) {
       acc[client.uniqueId] = (acc[client.uniqueId] || 0) + 1;
@@ -524,7 +477,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     Object.keys(uniqueIdCounts).filter(id => uniqueIdCounts[id] > 1)
   );
 
-  // --- Filtrado y Ordenamiento de Clientes ---
   const filteredClients = clients
     .filter(c => c.name.toLowerCase().includes(walletSearchTerm.toLowerCase()) || c.uniqueId.toLowerCase().includes(walletSearchTerm.toLowerCase()))
     .sort((a, b) => {
@@ -535,15 +487,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
       return 0;
     });
 
-  // --- Wallet Logic ---
-  // Filtrar órdenes del cliente seleccionado que sean a crédito (para ver el detalle de la deuda)
   const clientCreditOrders = selectedClientWallet 
     ? orders.filter(o => o.clientId === selectedClientWallet.id && o.paymentType === 'credito').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     : [];
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f5f7fa' }}>
-      {/* Sidebar simple */}
       <aside style={{ width: '250px', backgroundColor: '#2c3e50', color: 'white', padding: '20px', display: 'flex', flexDirection: 'column' }}>
         <h2 style={{ margin: '0 0 30px 0', fontSize: '24px' }}>Admin Panel</h2>
         <nav style={{ flex: 1 }}>
@@ -583,18 +532,30 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
         </button>
       </aside>
 
-      {/* Contenido Principal */}
       <main style={{ flex: 1, padding: '30px', overflowY: 'auto' }}>
         {activeView === 'dashboard' && (
           <div>
-            <h1 style={{ margin: '0 0 20px 0', color: '#333' }}>Dashboard de Negocio</h1>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h1 style={{ margin: 0, color: '#333' }}>Dashboard de Negocio</h1>
+              <button onClick={loadData} style={{ padding: '8px 16px', background: '#3498db', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  🔄 Actualizar
+              </button>
+            </div>
             {loading ? <p>Cargando estadísticas...</p> :
               <div>
-                {/* Fila de Métricas Principales */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '30px' }}>
                   <div style={{ background: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
-                    <h3 style={{ marginTop: 0, color: '#666', fontSize: '16px' }}>💰 Ingresos Totales</h3>
-                    <p style={{ fontSize: '32px', fontWeight: 'bold', color: '#27ae60', margin: 0 }}>${totalRevenue.toFixed(2)}</p>
+                    <h3 style={{ marginTop: 0, color: '#666', fontSize: '16px' }}>💰 Ingresos por Venta</h3>
+                    <div style={{ fontSize: '14px', color: '#555', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Efectivo:</span> <strong>${totalRevenueEfectivo.toFixed(2)}</strong></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Crédito:</span> <strong>${totalRevenueCredito.toFixed(2)}</strong></div>
+                    </div>
+                    <div style={{ borderTop: '1px solid #eee', marginTop: '10px', paddingTop: '10px' }}>
+                      <p style={{ fontSize: '24px', fontWeight: 'bold', color: '#27ae60', margin: 0, display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Total:</span>
+                        <span>${totalRevenue.toFixed(2)}</span>
+                      </p>
+                    </div>
                   </div>
                   <div style={{ background: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
                     <h3 style={{ marginTop: 0, color: '#666', fontSize: '16px' }}>📈 Órdenes Totales</h3>
@@ -606,8 +567,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   </div>
                 </div>
 
-                {/* Fila de Análisis de Productos */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '20px' }}>
                   <div style={{ background: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
                     <h3 style={{ marginTop: 0, color: '#666' }}>🏆 Top 5 Productos Vendidos</h3>
                     <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
@@ -617,6 +577,45 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                           <span style={{ fontWeight: 'bold' }}>{p.quantity} uds.</span>
                         </li>
                       ))}
+                    </ul>
+                  </div>
+                  <div style={{ background: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <h3 style={{ marginTop: 0, color: '#666' }}>🏆 Top Clientes por Compra</h3>
+                        <div style={{ display: 'flex', gap: '5px', background: '#eee', padding: '4px', borderRadius: '6px' }}>
+                            {[5, 10, 20].map(limit => (
+                                <button
+                                    key={limit}
+                                    onClick={() => setTopClientsLimit(limit)}
+                                    style={{
+                                        padding: '4px 8px', border: 'none', borderRadius: '4px', background: topClientsLimit === limit ? '#6b3fb5' : 'transparent', color: topClientsLimit === limit ? 'white' : '#333', cursor: 'pointer', fontWeight: 'bold'
+                                    }}
+                                >
+                                    Top {limit}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div style={{ marginBottom: '15px', display: 'flex', gap: '10px' }}>
+                        {(['all', 'credito', 'efectivo'] as const).map(segment => (
+                            <button
+                                key={segment}
+                                onClick={() => setTopClientsSegment(segment)}
+                                style={{
+                                    padding: '6px 12px', border: topClientsSegment === segment ? '2px solid #3498db' : '2px solid #ddd', borderRadius: '15px', background: topClientsSegment === segment ? '#eaf5fc' : 'white', color: topClientsSegment === segment ? '#2980b9' : '#555', cursor: 'pointer', fontWeight: '600', textTransform: 'capitalize'
+                                }}
+                            >
+                                {segment === 'all' ? 'Todos' : segment}
+                            </button>
+                        ))}
+                    </div>
+                    <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                        {topClients.length > 0 ? topClients.map((c, i) => (
+                            <li key={c.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
+                                <span>{i + 1}. {c.name}</span>
+                                <span style={{ fontWeight: 'bold' }}>${c.total.toFixed(2)}</span>
+                            </li>
+                        )) : <p style={{color: '#999', textAlign: 'center'}}>No hay datos de compra para este segmento.</p>}
                     </ul>
                   </div>
                   <div style={{ background: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
@@ -632,7 +631,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   </div>
                 </div>
 
-                {/* Gráfico de Líneas */}
                 <div style={{ background: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)', marginTop: '20px' }}>
                   <h3 style={{ marginTop: 0, color: '#666' }}>Evolución de Ingresos Diarios</h3>
                   <p style={{ color: '#999', fontStyle: 'italic' }}>Gráfico no disponible (Librerías no instaladas)</p>
@@ -664,7 +662,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
             )}
             
             {!selectedClientWallet ? (
-              // Vista General: Lista de Clientes
               <div style={{ background: 'white', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                   <thead style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #eee' }}>
@@ -721,7 +718,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                 </table>
               </div>
             ) : (
-              // Vista Detalle: Historial del Cliente
               <div>
                 <button onClick={() => setSelectedClientWallet(null)} style={{ marginBottom: '20px', background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '5px' }}>
                   ← Volver a la lista
@@ -770,7 +766,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
           </div>
         )}
 
-        {/* Modal de Edición de Cliente */}
         {isClientFormOpen && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
             <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '8px', width: '400px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -801,7 +796,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
           </div>
         )}
 
-        {/* Modal de Abono */}
         {isPaymentModalOpen && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1100 }}>
             <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '8px', width: '350px', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}>
@@ -877,20 +871,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   </thead>
                   <tbody>
                     {filteredProducts.map((product) => {
-                      // Lógica de Validación de Consistencia
                       const prodCatVal = (product.category || '').trim();
                       
-                      // Buscamos si el valor del producto coincide con ID o Nombre de alguna categoría existente
                       const matchedCategory = categories.find(c => 
                         c.id === prodCatVal || 
                         (c.name || '').toUpperCase() === prodCatVal.toUpperCase()
                       );
 
-                      // Si no hay match y no es un producto nuevo vacío, es una inconsistencia
                       const isConsistent = !!matchedCategory;
                       const rowBg = !isConsistent 
-                        ? '#ffebee' // Rojo claro para error
-                        : product.isBlocked ? '#f9f9f9' : 'white'; // Normal o Bloqueado
+                        ? '#ffebee'
+                        : product.isBlocked ? '#f9f9f9' : 'white';
 
                       return (
                       <tr key={product.id} style={{ borderBottom: '1px solid #eee', opacity: product.isBlocked ? 0.5 : 1, backgroundColor: rowBg }}>
@@ -909,14 +900,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                       </td>
                       <td style={{ padding: '10px 15px', fontWeight: '600' }}>{product.name}</td>
 
-                      {/* Columna: Valor que tiene el producto actualmente */}
                       <td style={{ padding: '10px 15px' }}>
                         <span style={{ padding: '4px 8px', background: '#fff', border: '1px solid #ccc', borderRadius: '4px', fontSize: '12px', fontFamily: 'monospace' }}>
                           {product.category}
                         </span>
                       </td>
 
-                      {/* Columna: Validación contra el catálogo */}
                       <td style={{ padding: '10px 15px', minWidth: '120px' }}>
                         {matchedCategory ? (
                           <span style={{ color: '#27ae60', fontWeight: 'bold', fontSize: '12px' }}>✅ {matchedCategory.name}</span>
@@ -999,7 +988,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
           </>
         )}
 
-        {/* Modal de Formulario */}
         {isFormOpen && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
             <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '8px', width: '500px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -1028,7 +1016,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                 <div style={{ marginBottom: '15px' }}>
                   <label style={{ display: 'block', marginBottom: '5px' }}>Categoría</label>
                   <select value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}>
-                    {categories.filter(c => c.id !== 'ALL').map(cat => ( // Filtramos 'ALL' que es para la vista principal
+                    {categories.filter(c => c.id !== 'ALL').map(cat => (
                       <option key={cat.id} value={cat.name}>{cat.name}</option>
                     ))}
                   </select>
@@ -1046,103 +1034,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   <button type="submit" style={{ padding: '10px 20px', background: '#6b3fb5', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Guardar</button>
                 </div>
               </form>
-            </div>
-          </div>
-        )}
-
-        {/* Modal de Formulario de Categorías */}
-        {isCategoryFormOpen && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-            <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '8px', width: '400px', maxHeight: '90vh', overflowY: 'auto' }}>
-              <h2 style={{ marginTop: 0 }}>{editingCategory ? 'Editar Categoría' : 'Nueva Categoría'}</h2>
-              <form onSubmit={handleSubmitCategory}>
-                {editingCategory && (
-                  <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '5px', color: '#888', fontSize: '12px' }}>ID Firebase (No editable)</label>
-                    <input type="text" readOnly value={editingCategory.id} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', background: '#f0f0f0', color: '#777', cursor: 'not-allowed' }} />
-                  </div>
-                )}
-                <div style={{ marginBottom: '15px' }}>
-                  <label style={{ display: 'block', marginBottom: '5px' }}>ID Interno (Opcional)</label>
-                  <input type="text" value={categoryFormData.internalId || ''} onChange={e => setCategoryFormData({...categoryFormData, internalId: e.target.value })} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }} placeholder="Ej: CAT-01" />
-                </div>
-                <div style={{ marginBottom: '15px' }}>
-                  <label style={{ display: 'block', marginBottom: '5px' }}>Nombre</label>
-                  <input required type="text" value={categoryFormData.name} onChange={e => setCategoryFormData({ ...categoryFormData, name: e.target.value })} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }} placeholder="Ej: Bebidas, Galletas..." />
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                  <button type="button" onClick={() => setIsCategoryFormOpen(false)} style={{ padding: '10px 20px', background: '#ccc', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Cancelar</button>
-                  <button type="submit" style={{ padding: '10px 20px', background: '#6b3fb5', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Guardar</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* Modal de Carga Masiva */}
-        {isBulkModalOpen && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1200 }}>
-            <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '12px', width: '600px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
-              <h2 style={{ marginTop: 0, color: '#27ae60' }}>📂 Carga Masiva de Productos</h2>
-              
-              {isUploading ? (
-                <div style={{ textAlign: 'center', padding: '40px 0' }}>
-                  <h3 style={{ color: '#666' }}>Analizando archivo...</h3>
-                  <div style={{ width: '100%', height: '20px', backgroundColor: '#eee', borderRadius: '10px', overflow: 'hidden', marginTop: '20px' }}>
-                    <div style={{ width: `${uploadProgress}%`, height: '100%', backgroundColor: '#27ae60', transition: 'width 0.1s linear' }}></div>
-                  </div>
-                  <p style={{ marginTop: '10px', fontWeight: 'bold' }}>{Math.round(uploadProgress)}%</p>
-                  <p style={{ fontSize: '12px', color: '#999' }}>Validando duplicados y categorías en Firebase...</p>
-                </div>
-              ) : uploadReport.length > 0 ? (
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                    <h3 style={{ margin: 0 }}>Resultados de la Carga</h3>
-                    <div style={{ fontSize: '14px' }}>
-                      <span style={{ color: '#27ae60', fontWeight: 'bold', marginRight: '10px' }}>Exitosos: {uploadReport.filter(r => r.status === 'success').length}</span>
-                      <span style={{ color: '#e74c3c', fontWeight: 'bold' }}>Errores: {uploadReport.filter(r => r.status === 'error').length}</span>
-                    </div>
-                  </div>
-                  
-                  <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '6px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                      <thead style={{ background: '#f9f9f9', position: 'sticky', top: 0 }}>
-                        <tr>
-                          <th style={{ padding: '8px', textAlign: 'left' }}>Fila</th>
-                          <th style={{ padding: '8px', textAlign: 'left' }}>Producto</th>
-                          <th style={{ padding: '8px', textAlign: 'left' }}>Estado</th>
-                          <th style={{ padding: '8px', textAlign: 'left' }}>Mensaje</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {uploadReport.map((item, idx) => (
-                          <tr key={idx} style={{ borderBottom: '1px solid #eee', background: item.status === 'error' ? '#fff5f5' : 'white' }}>
-                            <td style={{ padding: '8px' }}>{item.row}</td>
-                            <td style={{ padding: '8px', fontWeight: 'bold' }}>{item.name}</td>
-                            <td style={{ padding: '8px' }}>{item.status === 'success' ? '✅' : '❌'}</td>
-                            <td style={{ padding: '8px', color: item.status === 'error' ? '#d50000' : '#2e7d32' }}>{item.message}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div style={{ marginTop: '20px', textAlign: 'right' }}>
-                    <button onClick={() => { setIsBulkModalOpen(false); setUploadReport([]); }} style={{ padding: '10px 20px', background: '#6b3fb5', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Cerrar</button>
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <p style={{ marginBottom: '20px', color: '#666', lineHeight: '1.5' }}>
-                    Selecciona un archivo Excel (.xlsx) con las siguientes columnas obligatorias: 
-                    <br/><strong>Nombre, Precio, Categoria, Stock</strong>.
-                    <br/><small>Opcionales: <strong>ID / CODIGO / SKU</strong>, Imagen, Unidad, Descripcion.</small>
-                  </p>
-                  <input type="file" accept=".xlsx, .xls" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'block', width: '100%', padding: '20px', border: '2px dashed #ccc', borderRadius: '8px', textAlign: 'center', cursor: 'pointer' }} />
-                  <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
-                    <button onClick={() => setIsBulkModalOpen(false)} style={{ padding: '10px 20px', background: '#ccc', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}

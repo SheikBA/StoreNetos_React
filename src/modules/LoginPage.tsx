@@ -28,7 +28,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onBack, onLoginSuccess }) => {
       // alert("¡Bienvenido Administrador!");
       onLoginSuccess();
     } else {
-      setError("El usuario ó contraseña son incorrectos, intente nuevamente");
+      setError("El usuario o contraseña son incorrectos, intente nuevamente");
     }
   };
 

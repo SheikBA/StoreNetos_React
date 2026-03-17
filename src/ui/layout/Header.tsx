@@ -58,7 +58,7 @@ const Header: React.FC<HeaderProps> = ({ cartItems = [], onOpenCart, showCartBut
                 pointerEvents: 'none',
                 border: '1px solid rgba(255,255,255,0.1)'
               }}>
-                Store Netos es una tienda en linea de auto servición, y para poder tomar el producto y tú cambio es necesario que registres tu compra en linea ó que te anotes en la libreta con tu nombre, fecha y producto que estas comprando
+                Store Netos es una tienda en linea de auto servicio, puedes tomar el producto, si pagaste en efectivo puedes tomar tú cambio de igual manera, recuerda que debes registrar tu compra, en l pagina oficial storenetos ó anotandote en la libreta con tu nombre, fecha y producto que estas comprando.
                 <div style={{ position: 'absolute', bottom: '100%', left: '10px', borderWidth: '6px', borderStyle: 'solid', borderColor: 'transparent transparent rgba(0,0,0,0.95) transparent' }}></div>
               </div>
             </div>

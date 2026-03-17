@@ -123,7 +123,7 @@ export const getClientByUniqueId = async (uniqueId: string): Promise<Client | nu
   const querySnapshot = await getDocs(q);
 
   if (querySnapshot.empty) {
-    console.error(`No se encontró cliente con el ID único: ${uniqueId}`);
+    console.error(`No se encontró cliente con el ID único: ${uniqueId}.`);
     return null;
   }
 
@@ -237,7 +237,7 @@ export const processOrderAndDecreaseStock = async (orderData: any, items: { id: 
     return null; // No hay URL si no hay datos de notificación
 
   } catch (e) {
-    console.error("Error en la transacción de la orden: ", e);
+    console.error("Error en la transacción de la orden:", e);
     throw e;
   }
 };
@@ -250,7 +250,7 @@ export const addProduct = async (product: Omit<Product, 'id'>) => {
     const docRef = await addDoc(collection(db, "products"), product);
     return docRef.id;
   } catch (e) {
-    console.error("Error adding product: ", e);
+    console.error("Error al agregar el producto:", e);
     throw e;
   }
 };
@@ -262,7 +262,7 @@ export const updateProduct = async (product: Product) => {
     const { id, ...data } = product; // Separamos el ID para no guardarlo dentro del documento
     await updateDoc(productRef, data);
   } catch (e) {
-    console.error("Error updating product: ", e);
+    console.error("Error al actualizar el producto:", e);
     throw e;
   }
 };
@@ -275,7 +275,7 @@ export const toggleProductBlock = async (id: string, currentStatus: boolean) => 
     const newStatus = !currentStatus;
     await updateDoc(productRef, { isBlocked: newStatus });
   } catch (e) {
-    console.error("Error toggling product block status: ", e);
+    console.error("Error al cambiar el estado de bloqueo del producto:", e);
     throw e;
   }
 };
@@ -285,7 +285,7 @@ export const deleteProduct = async (id: string) => {
   try {
     await deleteDoc(doc(db, "products", id));
   } catch (e) {
-    console.error("Error deleting product: ", e);
+    console.error("Error al eliminar el producto:", e);
     throw e;
   }
 };
@@ -298,7 +298,7 @@ export const addCategory = async (category: Omit<Category, 'id'>) => {
     const docRef = await addDoc(collection(db, "categories"), category);
     return docRef.id;
   } catch (e) {
-    console.error("Error adding category: ", e);
+    console.error("Error al agregar la categoría:", e);
     throw e;
   }
 };
@@ -310,7 +310,7 @@ export const updateCategory = async (category: Category) => {
     const { id, ...data } = category;
     await updateDoc(categoryRef, data);
   } catch (e) {
-    console.error("Error updating category: ", e);
+    console.error("Error al actualizar la categoría:", e);
     throw e;
   }
 };
@@ -320,7 +320,7 @@ export const deleteCategory = async (id: string) => {
   try {
     await deleteDoc(doc(db, "categories", id));
   } catch (e) {
-    console.error("Error deleting category: ", e);
+    console.error("Error al eliminar la categoría:", e);
     throw e;
   }
 };
@@ -340,7 +340,7 @@ export const addClient = async (client: Omit<Client, 'id'>) => {
     const docRef = await addDoc(collection(db, "clients"), client);
     return docRef.id;
   } catch (e) {
-    console.error("Error adding client: ", e);
+    console.error("Error al agregar el cliente:", e);
     throw e;
   }
 };
@@ -352,7 +352,7 @@ export const updateClient = async (client: Client) => {
     const { id, ...data } = client;
     await updateDoc(clientRef, data);
   } catch (e) {
-    console.error("Error updating client: ", e);
+    console.error("Error al actualizar el cliente:", e);
     throw e;
   }
 };
@@ -362,7 +362,7 @@ export const deleteClient = async (id: string) => {
   try {
     await deleteDoc(doc(db, "clients", id));
   } catch (e) {
-    console.error("Error deleting client: ", e);
+    console.error("Error al eliminar el cliente:", e);
     throw e;
   }
 };
@@ -387,7 +387,7 @@ export const registerClientPayment = async (clientId: string, amount: number) =>
       });
     });
   } catch (e) {
-    console.error("Error registering payment: ", e);
+    console.error("Error al registrar el pago:", e);
     throw e;
   }
 };
@@ -399,7 +399,7 @@ export const getAdminEmails = async (): Promise<string[]> => {
     // Asumimos que los documentos tienen un campo llamado "email"
     return querySnapshot.docs.map(doc => doc.data().email).filter(email => !!email);
   } catch (e) {
-    console.error("Error fetching admin emails: ", e);
+    console.error("Error al obtener los correos de administrador:", e);
     return []; // Retorna arreglo vacío si falla para no romper el flujo
   }
 };
@@ -464,7 +464,7 @@ export const loginAdmin = async (username: string, password: string) => {
     const querySnapshot = await getDocs(q);
 
     if (querySnapshot.empty) {
-      console.error(`Login failed: No user found with username '${username}'`);
+      console.error(`Error de inicio de sesión: No se encontró usuario con el nombre '${username}'`);
       return false;
     }
 
@@ -475,7 +475,7 @@ export const loginAdmin = async (username: string, password: string) => {
 
     return passwordMatch;
   } catch (e) {
-    console.error("Error during admin login: ", e);
+    console.error("Error durante el inicio de sesión del administrador:", e);
     return false;
   }
 };
@@ -486,7 +486,7 @@ export const updateAdminPassword = async (username: string, newPass: string) => 
     const q = query(collection(db, "Loging"), where("username", "==", username));
     const querySnapshot = await getDocs(q);
     if (querySnapshot.empty) {
-        console.error("Cannot update password, user not found.");
+        console.error("No se puede actualizar la contraseña, usuario no encontrado.");
         return false;
     }
     
@@ -500,7 +500,7 @@ export const updateAdminPassword = async (username: string, newPass: string) => 
     await updateDoc(adminRef, { password: hashedPassword });
     return true;
   } catch (e) {
-    console.error("Error updating password: ", e);
+    console.error("Error al actualizar la contraseña:", e);
     throw e;
   }
 };
