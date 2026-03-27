@@ -48,6 +48,9 @@ export interface Client {
   isBlocked?: boolean;
 }
 
+// --- DIAGNÓSTICO: Confirmar que el servicio se cargó correctamente ---
+console.log("✅ storeService.ts cargado correctamente. Las funciones de base de datos están listas.");
+
 // --- FUNCIONES API ---
 
 // 1. Obtener todos los productos
@@ -223,11 +226,14 @@ export const processOrderAndDecreaseStock = async (orderData: any, items: { id: 
     
     // Transacción exitosa. Ahora sí, enviamos el correo (Fire and Forget)
     if (emailNotificationData) {
+      // Obtenemos los emails aquí para evitar la dependencia circular en emailService
+      const adminEmails = await getAdminEmails();
       sendOrderEmail(
         emailNotificationData.order,
         emailNotificationData.client,
         emailNotificationData.prevBalance,
-        emailNotificationData.newBalance
+        emailNotificationData.newBalance,
+        adminEmails // <--- Pasamos los emails explícitamente
       );
 
       // Crea y devuelve la URL de WhatsApp para que la UI la maneje
@@ -438,26 +444,87 @@ export const getFriendlyErrorMessage = (error: any): string => {
 };
 
 // 4. Migración de Datos (Seed)
-export const seedDatabase = async (products: any[], clients: any[]) => {
-  const batch = writeBatch(db);
+export const seedDatabase = async (products: any[], clients: any[] = []) => {
+  console.log(`🚀 Intentando iniciar carga masiva. Productos recibidos: ${products?.length || 0}`);
+  
+  if (!Array.isArray(products) || products.length === 0) {
+    console.error("❌ Error en seedDatabase: La lista de productos es indefinida o vacía.");
+    throw new Error("El archivo no contiene una lista válida de productos.");
+  }
 
-  // Preparar productos
-  products.forEach(p => {
-    const docRef = doc(db, "products", p.id); // Usamos el ID del mock como ID del documento
-    batch.set(docRef, p);
-  });
+  // CHUNKING: Dividimos los datos en lotes de 450 para respetar el límite de 500 de Firebase
+  const BATCH_SIZE = 450;
+  let processedCount = 0;
+  
+  // --- PROCESAR PRODUCTOS ---
+  const productChunks: any[][] = [];
+  for (let i = 0; i < products.length; i += BATCH_SIZE) {
+    productChunks.push(products.slice(i, i + BATCH_SIZE));
+  }
+  
+  console.log(`📦 Procesando productos en ${productChunks.length} lote(s)...`);
 
-  // Preparar clientes
-  clients.forEach(c => {
-    const docRef = doc(db, "clients", c.id);
-    batch.set(docRef, c);
-  });
+  for (let index = 0; index < productChunks.length; index++) {
+    const chunk = productChunks[index];
+    try {
+      const batch = writeBatch(db);
+      let opsCount = 0;
 
-  await batch.commit();
+      chunk.forEach((p: any) => {
+        if (!p || !p.id) return; // Saltar vacíos
+        
+        // Sanitizar ID (convertir a string y quitar espacios)
+        const safeId = String(p.id).trim();
+        if (safeId === "" || safeId.includes("/")) {
+          console.warn(`⚠️ Producto omitido por ID inválido: ${safeId}`, p);
+          return;
+        }
+
+        const productData = {
+          ...p,
+          id: safeId,
+          price: Number(p.price) || 0,
+          stock: Number(p.stock) || 0,
+        };
+        const docRef = doc(db, "products", safeId);
+        batch.set(docRef, productData);
+        opsCount++;
+      });
+
+      if (opsCount > 0) {
+        await batch.commit();
+        processedCount += opsCount;
+        console.log(`✅ Lote ${index + 1}/${productChunks.length} subido (${opsCount} productos).`);
+      }
+    } catch (err) {
+      console.error(`❌ Error subiendo el lote ${index + 1}:`, err);
+      throw err; // Detener si hay un error crítico de red/permisos
+    }
+  }
+
+  // --- PROCESAR CLIENTES (Si existen) ---
+  if (clients && clients.length > 0) {
+    console.log("👥 Procesando clientes...");
+    const clientBatch = writeBatch(db); // Asumimos que clientes son menos de 500, si no, aplicar misma lógica
+    clients.forEach(c => {
+      if (!c || !c.id) return;
+      const safeClientId = String(c.id).trim();
+      const docRef = doc(db, "clients", safeClientId);
+      clientBatch.set(docRef, c);
+    });
+    await clientBatch.commit();
+  }
+
+  console.log(`🎉 Carga masiva FINALIZADA. Total productos procesados: ${processedCount}`);
 };
 
 // 5. Login Admin
-export const loginAdmin = async (username: string, password: string) => {
+export const loginAdmin = async (username: string, password: string, captchaToken: string | null) => {
+  if (!captchaToken) {
+    console.error("Seguridad: Intento de login sin resolver Captcha.");
+    return false;
+  }
+
   try {
     // Buscamos primero solo por usuario para evitar problemas de tipos (number vs string) en la contraseña
     const q = query(collection(db, "Loging"), where("username", "==", username));

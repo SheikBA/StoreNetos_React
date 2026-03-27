@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import ReCAPTCHA from "react-google-recaptcha";
 import { loginAdmin, updateAdminPassword } from '../services/storeService';
 
 interface LoginPageProps {
@@ -18,17 +19,30 @@ const LoginPage: React.FC<LoginPageProps> = ({ onBack, onLoginSuccess }) => {
   const [repeatPass, setRepeatPass] = useState('');
   const [updateMsg, setUpdateMsg] = useState('');
 
+  // Referencia y estado para el Captcha
+  const recaptchaRef = useRef<ReCAPTCHA>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     
-    const isValid = await loginAdmin(username, password);
+    if (!captchaToken) {
+      setError("Por favor, confirma que no eres un robot.");
+      return;
+    }
+
+    // Corregido: nombre de la función y envío de token
+    const isValid = await loginAdmin(username, password, captchaToken);
     
     if (isValid) {
       // alert("¡Bienvenido Administrador!");
       onLoginSuccess();
     } else {
       setError("El usuario o contraseña son incorrectos, intente nuevamente");
+      // Resetear captcha en caso de error para obligar a resolverlo de nuevo
+      setCaptchaToken(null);
+      recaptchaRef.current?.reset();
     }
   };
 
@@ -103,6 +117,15 @@ const LoginPage: React.FC<LoginPageProps> = ({ onBack, onLoginSuccess }) => {
                 onChange={(e) => setPassword(e.target.value)}
                 style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '16px', boxSizing: 'border-box' }}
                 placeholder="••••••••"
+              />
+            </div>
+
+            {/* Widget de Google reCAPTCHA */}
+            <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'center' }}>
+              <ReCAPTCHA
+                ref={recaptchaRef}
+                sitekey={process.env.REACT_APP_RECAPTCHA_SITE_KEY || ""}
+                onChange={(token) => setCaptchaToken(token)}
               />
             </div>
 

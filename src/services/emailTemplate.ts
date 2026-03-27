@@ -1,4 +1,4 @@
-import { Order, Client } from './storeService';
+import type { Order, Client } from './storeService';
 
 export const generateOrderConfirmationEmailHtml = (
   order: Order,
