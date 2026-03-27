@@ -250,7 +250,6 @@ const StoreNetosApp: React.FC = () => {
         cartItems={cartItems}
         onOpenCart={() => setShowCartPanel(true)}
         showCartButton={true}
-        onAdminClick={() => navigate('/Acceso-Privado-Netos')}
       />
       <div className="main-container">
         <SidebarCategories
