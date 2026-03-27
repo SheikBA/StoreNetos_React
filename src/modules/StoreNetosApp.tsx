@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Header from '../ui/layout/Header';
 import SidebarCategories from '../ui/layout/SidebarCategories';
 import MainCatalog from '../ui/layout/MainCatalog';
 import CartSidebar from '../ui/layout/CartSidebar';
 import Footer from '../ui/layout/Footer';
 import { listenToProducts, listenToCategories, processOrderAndDecreaseStock, Product, Client, Category, getFriendlyErrorMessage } from '../services/storeService';
-import LoginPage from './LoginPage';
-import AdminPanel from './AdminPanel';
 
 const StoreNetosApp: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState('ALL');
@@ -17,11 +16,11 @@ const StoreNetosApp: React.FC = () => {
   const [showCartPanel, setShowCartPanel] = useState(false);
   const [inventory, setInventory] = useState<{ [key: string]: number }>({});
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
-  const [view, setView] = useState<'store' | 'login' | 'admin'>('store');
   const [hideNoStock, setHideNoStock] = useState(false); // Estado para ocultar agotados
 
   // Ref para el contenedor del mensaje (toast)
   const toastRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   // Cargar datos iniciales y establecer listener en tiempo real para productos
   useEffect(() => {
@@ -226,24 +225,6 @@ const StoreNetosApp: React.FC = () => {
     }
   };
 
-  if (view === 'login') {
-    return (
-      <LoginPage 
-        onBack={() => setView('store')} 
-        onLoginSuccess={() => {
-          setToast({ message: '¡Bienvenido Administrador!', type: 'success' });
-          setView('admin'); // Aquí cambiarías a tu vista de AdminPanel cuando la crees
-        }} 
-      />
-    );
-  }
-
-  if (view === 'admin') {
-    return (
-      <AdminPanel onLogout={() => setView('store')} />
-    );
-  }
-
   return (
     <div>
       {/* Global CSS Variables Injection */}
@@ -269,7 +250,7 @@ const StoreNetosApp: React.FC = () => {
         cartItems={cartItems}
         onOpenCart={() => setShowCartPanel(true)}
         showCartButton={true}
-        onAdminClick={() => setView('login')}
+        onAdminClick={() => navigate('/Acceso-Privado-Netos')}
       />
       <div className="main-container">
         <SidebarCategories

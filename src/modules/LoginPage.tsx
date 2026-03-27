@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import ReCAPTCHA from "react-google-recaptcha";
 import { loginAdmin, updateAdminPassword } from '../services/storeService';
 
@@ -22,6 +23,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onBack, onLoginSuccess }) => {
   // Referencia y estado para el Captcha
   const recaptchaRef = useRef<ReCAPTCHA>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,8 +38,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onBack, onLoginSuccess }) => {
     const isValid = await loginAdmin(username, password, captchaToken);
     
     if (isValid) {
-      // alert("¡Bienvenido Administrador!");
-      onLoginSuccess();
+      navigate('/Admin');
     } else {
       setError("El usuario o contraseña son incorrectos, intente nuevamente");
       // Resetear captcha en caso de error para obligar a resolverlo de nuevo

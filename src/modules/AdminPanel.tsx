@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { 
   getProducts, Product, updateAdminPassword, addProduct, updateProduct, deleteProduct, 
@@ -54,6 +55,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadReport, setUploadReport] = useState<{row: number, name: string, status: 'success' | 'error', message: string}[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
 
   const handleWalletSort = (key: keyof Client) => {
     setWalletSort(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));
@@ -525,7 +527,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
           </ul>
         </nav>
         <button 
-          onClick={onLogout}
+          onClick={() => navigate('/Store')}
           style={{ padding: '10px', background: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
         >
           Cerrar Sesión
