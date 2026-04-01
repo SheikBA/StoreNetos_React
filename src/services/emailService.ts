@@ -1,6 +1,6 @@
 import emailjs from '@emailjs/browser';
 import { generateOrderConfirmationEmailHtml } from './emailTemplate';
-import { Order, Client, getAdminEmails } from './storeService';
+import type { Order, Client } from './storeService'; // Solo importamos Tipos (no genera ciclo)
 
 // ⚠️ REEMPLAZA ESTOS VALORES CON LOS DE TU CUENTA DE EMAILJS
 const SERVICE_ID = "service_318kdd8"; // ✅ ¡CORRECTO! Este parece un Service ID válido.
@@ -11,10 +11,10 @@ export const sendOrderEmail = async (
   order: Order,
   client: Client,
   previousBalance: number,
-  newBalance: number
+  newBalance: number,
+  adminEmails: string[] // <--- Nuevo argumento: Recibimos los emails aquí
 ) => {
-  // 1. Obtener correos de administradores desde Firebase
-  const adminEmails = await getAdminEmails();
+  // 1. Usamos la lista de correos que nos pasaron
   
   // Construir la lista de destinatarios.
   // Si no hay admins en la DB, el array inicia vacío, pero el proceso continúa para el cliente.

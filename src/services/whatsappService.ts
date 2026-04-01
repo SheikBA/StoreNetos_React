@@ -1,4 +1,4 @@
-import { Order, Client } from './storeService';
+import type { Order, Client } from './storeService';
 
 // ⚠️ REEMPLAZA ESTE VALOR CON TU NÚMERO DE WHATSAPP
 // Incluye el código de país + el dígito '1' (si es celular) + tu número a 10 dígitos.

@@ -66,9 +66,11 @@ const Header: React.FC<HeaderProps> = ({ cartItems = [], onOpenCart, showCartBut
         </div>
       </div>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', position: 'absolute', right: 32, top: 24 }}>
+        {/* 
         <button className="btn-saldo" onClick={onAdminClick} style={{ transition: 'all 0.3s ease', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }}>
           ADMINISTRADOR
         </button>
+        */}
         <button className="btn-saldo" onClick={() => setShowBalance(true)} style={{ transition: 'all 0.3s ease' }}>
           💰 Ver saldo
         </button>
