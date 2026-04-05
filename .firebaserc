@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "storenetos-backend"
-  }
+    "default": "storenetos-backend",
+    "Actualizacion prod": "store-netos"
+  },
+  "targets": {},
+  "etags": {}
 }
